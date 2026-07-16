@@ -1,0 +1,44 @@
+Makes "down" button on home screen run WiFi in AP mode immediately,
+which return back to home screen when stopped.
+WiFi app will also only run AP mode and return to home screen, as a side-effect.
+Intent is to make is really easy to upload files, instead of slow menu navigation steps.
+
+diff --git a/src/states/HomeState.cpp b/src/states/HomeState.cpp
+index f087fc5..3fc4665 100644
+--- a/src/states/HomeState.cpp
++++ b/src/states/HomeState.cpp
+@@ -202,8 +202,11 @@ StateTransition HomeState::update(Core& core) {
+             // btn4: Settings
+             return StateTransition::to(StateId::Settings);
+ 
++          case Button::Down: // XXX: Down -> WiFi AP shortcut
++            return StateTransition::to(StateId::Network);
++
+           case Button::Up:
+-          case Button::Down:
++          // case Button::Down: XXX: Down -> WiFi AP shortcut
+           case Button::Power:
+             // Side buttons unused on home screen
+             break;
+diff --git a/src/states/NetworkState.cpp b/src/states/NetworkState.cpp
+index 7b0221a..9656488 100644
+--- a/src/states/NetworkState.cpp
++++ b/src/states/NetworkState.cpp
+@@ -56,7 +56,7 @@ void NetworkState::enter(Core& core) {
+   scanRetryAt_ = 0;
+   selectedSSID_[0] = '\0';
+ 
+-  returnState_ = StateId::AppLauncher;
++  returnState_ = StateId::Home; // XXX: Network -> AP mode without mode selection
+ 
+   // Load saved credentials
+   WIFI_STORE.loadFromFile();
+@@ -66,7 +66,7 @@ void NetworkState::enter(Core& core) {
+   if (core.pendingSync == SyncMode::NtpSync) {
+     startWifiScan(core);
+     currentScreen_ = NetworkScreen::WifiList;
+-  }
++  } else startHotspot(core); // XXX: Network -> AP mode without mode selection
+ }
+ 
+ void NetworkState::exit(Core& core) {

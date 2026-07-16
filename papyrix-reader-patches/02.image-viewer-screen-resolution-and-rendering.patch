@@ -1,0 +1,41 @@
+Makes Image Viewer app use same resolution for images as screen size and sleep images.
+I.e. 480x800, instead of 480x777. Can make button bar illegible, depending on the image.
+Also adds currentIndex == lastIndex check to avoid re-rendering images,
+which I think can happen in some events, but didn't actually check.
+
+diff --git a/src/apps/ImageViewerApp.cpp b/src/apps/ImageViewerApp.cpp
+index aaab441..e01a53e 100644
+--- a/src/apps/ImageViewerApp.cpp
++++ b/src/apps/ImageViewerApp.cpp
+@@ -32,12 +32,13 @@ static constexpr uint32_t SLIDESHOW_INTERVALS[] = {0, 30000, 60000, 300000};
+ static constexpr const char* SLIDESHOW_LABELS[] = {"Off", "30s", "60s", "5min"};
+ static constexpr int SLIDESHOW_COUNT = 4;
+ 
+-static constexpr int BOTTOM_BAR_HEIGHT = 23;
++static constexpr int BOTTOM_BAR_HEIGHT = 0; // XXX: use screen size instead of x777
+ static constexpr uint32_t MAX_IMAGE_FILE_SIZE = 10 * 1024 * 1024;  // 10 MB
+ 
+ static struct {
+   std::vector<std::string> files;
+   int currentIndex = 0;
++  int lastIndex = -1; // XXX: less renders
+   int slideshowSetting = 0;
+   unsigned long lastAdvanceMs = 0;
+   int8_t menuSelected = 0;
+@@ -218,6 +219,7 @@ static bool renderImage() {
+ void enter(Core& core) {
+   LOG_INF(TAG, "Image Viewer enter");
+   state.currentIndex = 0;
++  state.lastIndex = -1; // XXX: less renders
+   state.lastAdvanceMs = millis();
+   state.menuSelected = 0;
+ 
+@@ -265,6 +267,8 @@ void onButton(Core& core, Button btn) {
+ 
+ bool render(Core& core) {
+   (void)core;
++  if (state.currentIndex == state.lastIndex) return true; // XXX: less renders
++  state.lastIndex = state.currentIndex;
+   return renderImage();
+ }
+ 
