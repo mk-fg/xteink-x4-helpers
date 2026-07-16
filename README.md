@@ -19,6 +19,9 @@ Table of Contents:
 
 - [Tools](#hdr-tools)
 
+    - [xteink-send](#hdr-xteink-send)
+    - [wifi-tmp](#hdr-wifi-tmp)
+
 - [Links](#hdr-links)
 
 Repository URLs:
@@ -95,7 +98,59 @@ with device powered-on and USB-connected. Change-rebuilds are fast after initial
 <a name=hdr-tools></a>
 # Tools
 
-To be updated after collecting various scripts in here.
+Helper scripts for terminal-centered worflow, as I tend to use zsh command-line
+there as a primary/origin interface for everything - to convert formats and
+simplify any routine file management operations.
+
+<a name=hdr-xteink-send></a>
+## [xteink-send]
+
+Very simple `xteink-send web-longread.fb2` which does everything
+else needed to run wifi connection (auto-closing it after 20min of idleness),
+waiting for it to establish (if not open already), mkdir `/web/<date>`,
+and run curl to upload file there, with proper filename sanitization
+(stripping characters that firmware doesn't support, like `:`, `?`, `*`, unicode, etc),
+request endpoint/formatting/hacks and per-file success/error checking/reporting.
+
+Basically one run-and-done tool for easy uploads from the command line.
+
+Under the hood uses [wifi-tmp script] (that can be found next to it) via
+sudo to keep wifi link running (and enable usb port for it if [hwctl] is used),
+as well as common [fping]/[curl] tools and python [unidecode] mode for
+unicode-to-ascii filename transliteration, if it is available to import.
+
+Makes some assumptions wrt where to put files, set at the top of the script
+and listed in `-h/--help` output.
+
+[xteink-send]: xteink-send
+[wifi-tmp script]: wifi-tmp
+[hwctl]: https://github.com/mk-fg/hwctl
+[fping]: https://fping.org/
+[curl]: https://curl.se/
+[unidecode]: https://pypi.org/project/Unidecode/
+
+<a name=hdr-wifi-tmp></a>
+## [wifi-tmp]
+
+Root script to run via sudo exception, to enable and keep wifi running
+in a reasonably safe manner, until preset inactivity timeout expires -
+as also mentioned for [xteink-send] script above.
+
+Running with `-h/--help` should list profiles from hardcoded wifi-tmp.profiles
+file for [wpa_supplicant], and a couple other parameters, like interface name and
+usb port that enables it (if [hwctl] is used), set at the top of the script.
+
+WiFi-profile line for `/etc/wpa_supplicant/wifi-tmp.profiles` to connect
+to AP that [Papyrix firmware] creates - `xteink-x4 :: 192.168.4.2/24 20m
+ssid="Papyrix" key_mgmt=NONE` (as used in xteink-send).
+Papyrix AP is unsecured like that, but then also has quite a short range,
+so probably shouldn't be a problem in practice, but otherwise temp-hostapd +
+stored connection parameters can be used instead - more PITA to make it work
+(entering pw via left-right buttons), and passwordless AP is easier to access
+from other devices (e.g. any laptop when not on home WiFi network).
+
+[wifi-tmp]: wifi-tmp
+[wpa_supplicant]: https://w1.fi/wpa_supplicant/
 
 
 <a name=hdr-links></a>

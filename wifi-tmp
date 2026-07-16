@@ -1,0 +1,84 @@
+#!/bin/bash
+
+usb=usb1 iface=wlan_usb
+profiles_src=/etc/wpa_supplicant/wifi-tmp.profiles
+
+declare -A profiles
+while read name sep addr timeout net; do
+	[[ "$sep" = :: ]] || continue
+	profiles[$name]="$addr $timeout $net"
+done < "$profiles_src"
+
+usage() {
+	local bin=${0##*/}
+	[[ $1 -eq 0 ]] || exec 1>&2
+	echo "Usage: $bin <unit> [<profile>]"
+	echo
+	echo "Run/ping wpa_supplicant client (enabling WiFi-USB device via hwctl),"
+	echo " for $iface iface, starting it with config and ip-addr/timeout"
+	echo " according to a profile name, if specified, otherwise only ping if it is running."
+	echo "wpa_supplicant stops on timeout, unless script pings same unit to reset it."
+	echo "Writes to a /tmp/.wifi-tmp.<unit>.log file (check fs.protected_symlinks = 1!),"
+	echo " which can be created in advance to set appropriate permissions on it for user."
+	echo
+	echo "Typical usage: sudo -n -- $bin xt1 xteink-x4"
+	echo "Script exits after wpa_supplicant got started,"
+	echo " but actual connection has to be checked via fping or logfile."
+	echo "\"hwctl\" tool [ https://github.com/mk-fg/hwctl ] is used for $usb port,"
+	echo " and is expected to be running if systemd hwctl.service is installed."
+	echo
+	echo "Supported profiles (read from $profiles_src ):"
+	echo "  [ <name> :: <local-IP> <timeout> <network-parameters...> ]"
+	for name in "${!profiles[@]}"; do
+		read addr timeout net <<< "${profiles[$name]}"
+		echo "  $name :: $addr $timeout ${net::24}..."; done
+	exit ${1:-1}; }
+[[ -n "$1" && "$1" != -h && "$1" != --help \
+	&& "${@: -1}" != -h && "${@: -1}" != --help ]] || usage 0
+
+set -eo pipefail
+u=$1 profile=$2  addr= timeout= net=
+[[ -n "$u" && -z "$3" ]] || usage 1
+[[ -z "$profile" ]] || {
+	read addr timeout net <<< "${profiles[$profile]}"
+	[[ -n "$addr" && -n "$timeout" && -n "$net" ]] || {
+		echo >&2 "ERROR: profile not found [ $profile ]"; exit 1; }
+	timeout=$(( ${timeout%m} * 60 )); }
+log=/tmp/.wifi-tmp."$u".log pid=/tmp/.wifi-tmp."$u".pid
+
+## Ping and exit
+pgrep --quiet -F "$pid" 2>/dev/null && touch "$pid" && exit
+[[ -n "$addr" && -n "$timeout" && -n "$net" ]] || { echo >&2 \
+	"ERROR: profile spec is required to start wpa_supplicant"; exit 1; }
+
+## wpa_supplicant subprocess
+conf=/tmp/.wifi-tmp."$u".conf conf_tmp=$(mktemp $conf.XXXXX)
+mv -f "$conf_tmp" "$conf" && rm -f "$pid" || { rm -f "$conf_tmp"; exit 1; }
+echo 'network={' >"$conf"; for line in $net
+	do echo "  $line" >>"$conf"; done; echo '}' >>"$conf"
+(
+	if systemctl -q cat hwctl &>/dev/null; then
+		systemctl -q is-active hwctl || {
+			echo >&2 'ERROR: hwctl is not running'; exit 1; }
+		usb_toggle() { echo "$usb=$1" >/run/hwctl/fifo; }
+		trap 'sleep 1; usb_toggle off' EXIT
+		usb_toggle on && sleep 3; fi
+	exec > >(setsid gawk '{print strftime("[%FT%T]"), $0; fflush()}' >"$log") 2>&1
+	setsid wpa_supplicant -i"$iface" -c "$conf" & p=$!
+	echo $p >"$pid"; [[ -z "$addr" ]] || ip addr rep "$addr" dev "$iface"
+	wait $p; ) & disown
+
+## Wait for wpa_supplicant to start
+for n in {1..30}; do pgrep --quiet \
+	-F "$pid" 2>/dev/null && conf= && break || sleep .3; done
+[[ -z "$conf" ]] || { echo >&2 "ERROR: Timeout starting wpa_supplicant"; exit 1; }
+
+## Timeout-kill subprocess
+( sleep "$timeout"; while :; do
+		ts1=$(printf '%(%s)T' -1) ts2=$(stat -c%Y "$pid" 2>/dev/null || echo 0)
+		ts_diff=$(( "$ts1" - "$ts2" ))
+		[[ "$ts_diff" -le "$timeout" ]] || { pkill --quiet -F "$pid"; exit 0; }
+		sleep $(( "$timeout" - "$ts_diff" ))
+	done ) & disown
+
+exit # done

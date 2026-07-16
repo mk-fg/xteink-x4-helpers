@@ -1,0 +1,137 @@
+#!/bin/bash
+
+dir_cover=/sleep
+dir_web=/web
+dir_books=/books
+dir_images=/images
+
+usage() {
+	local bin=${0##*/}
+	[[ $1 -eq 0 ]] || exec 1>&2
+	echo "Usage: $bin cover.bmp"
+	echo "Usage: $bin <web-longread>.fb2 ..."
+	echo "Usage: $bin b[ook] <book>.fb2 ..."
+	echo "Usage: $bin <image>.<jpg/png/bmp> ..."
+	echo "Usage: $bin p[ing]  # to keep wifi running for longer"
+	[[ $1 -ne 0 ]] || { echo
+		echo "Uploads specified file(s) to a xteink reader device, after enabling wifi"
+		echo " and confirming that it was able to connect, using appropriate dirs"
+		echo " for file-types and content - web pages/posts, books, images, etc."
+		echo "\"$bin ping\" operation is to bump wifi timeout, e.g. when using webui."
+		echo
+		echo "Destination directories used on device:"
+		echo "- cover.bmp file gets uploaded to $dir_cover/cover.bmp as a sleep/power-off image"
+		echo "- by default .fb2 are treated as \"web longreads\" to put into $dir_web/<today-date> dirs"
+		echo "- book uploads go to $dir_books, image files to $dir_images"
+		echo
+		echo "Uses fping/curl and python \"unidecode\" module (for filename sanitization),"
+		echo " and runs \"sudo wifi-tmp\" script from the same repo to init/keep wifi open (for like 20m)."; }
+	exit ${1:-1}; }
+[[ -n "$1" && "$1" != -h && "$1" != --help \
+	&& "${@: -1}" != -h && "${@: -1}" != --help ]] || usage 0
+
+set -eo pipefail
+declare -A ext_mts=(
+	[fb2]=application/x-fictionbook+xml [epub]=application/epub+zip
+	[jpg]=image/jpeg [png]=image/png [bmp]=image/bmp )
+mt_err='must be .fb2/epub (book/web), .jpg/png/bmp (image) or .bmp (cover)'
+if [[ "$1" = p || "$1" = ping ]]; then m=ping
+elif [[ "$1" = b || "$1" = book ]]; then m=book; shift
+else
+	m="${1##*.}"; m=${m,,}
+	[[ -n "${ext_mts[$m]}" ]] || { echo >&2 "ERROR: File [ $1 ] $mt_err"; exit 1; }
+	[[ "$m" = jpg || "$m" = png || "$m" = bmp ]] && m=image || m=web;
+fi
+[[ -n "$1" ]] || usage 1
+
+if [[ $m = ping ]]; then shift; [[ -z "$1" ]] || usage 1
+elif [[ $m != book && "$1" = cover.bmp ]]
+	then m=cover; src="$1"; echo "Upload [ $m ] :: $src"
+else # Filenames are limited to ascii subset on xteink - fix with py script
+	declare -A src; echo "Upload(s) [ $m ] ::"
+	p=; while read name; do
+		[[ -n "$p" ]] || { p=$name; continue; }
+		echo "  $p"; ext=${name##*.}; ext=${ext,,}
+		if [[ $m != image ]]
+				then [[ "$ext" = fb2 || "$ext" = epub ]]
+				else [[ "$ext" = jpg || "$ext" = png || "$ext" = bmp ]]; fi \
+			|| { echo >&2 "ERROR: File ($m) $mt_err"; exit 1; } # name already printed above
+		src[$name]=$p; p=
+	done < <(python /dev/stdin "$@" <<'EOF'
+import os, sys, re, unicodedata, base64, hashlib
+_name_subs = { r'[\\/\?\*;]': '_', r'^\.+': '_', r':': '-_',
+	r'<': '(', r'>': ')', r'\*': '+', r'[|!"]': '-', '#': 'N',
+	'[\'’,\x00-\x1f]': '', r'\.+\Z': '_', r'\s+\Z': '', r'\s': '_' }
+def name_for_fs( name, fallback=...,
+		_name_subs=list((re.compile(k), v) for k,v in _name_subs.items()) ):
+	if not name and fallback is not ...: return fallback
+	for sub_re, sub in _name_subs: name = sub_re.sub(sub, name)
+	if len(name) > 100:
+		name, _, ext = name.rpartition('.')
+		tag = base64.urlsafe_b64encode(
+				hashlib.blake2s( name.encode(), key=b'xteink-fn').digest()
+			).decode().translate(dict.fromkeys(map(ord, '-_=')))[:4]
+		name = '.'.join([name[:90], tag, ext])
+	return name
+try: from unidecode import unidecode
+except ImportError: unidecode = print( 'WARNING:'
+	' Using ascii-decode for filenames without unidecode module', file=sys.stderr)
+for p in sys.argv[1:]:
+	if not os.access(p, os.R_OK):
+		print(f'ERROR: File missing/inaccessible :: {p}', file=sys.stderr); continue
+	name = os.path.basename(p)
+	name = ( unidecode(name) if unidecode
+		else unicodedata.normalize('NFKD', p).encode('ascii', 'ignore') )
+	print(p); print(name_for_fs(name))
+EOF
+); fi
+echo --------------------
+
+
+### Run WiFi connection
+
+addr=192.168.4.1 log=/tmp/.wifi-tmp.xteink.log
+touch $log && chown $USER: $log && chmod 600 $log # to access what wifi-tmp writes
+tail -F $log & tail_pid=$!
+trap '[[ -z "$tail_pid" ]] || kill $tail_pid' EXIT
+sudo -n -- wifi-tmp xteink xteink-x4
+ack=; fping -q -B1.2 -t100 -r5 "$addr" && ack=t || {
+	sleep 2 && fping -q -B1.2 -t100 -r11 "$addr" && ack=t; }
+[[ -n "$ack" ]] || { echo >&2 "ERROR: Failed to connect to Papyrix AP"; exit 1; }
+echo --------------------
+[[ $m != ping ]] || exit 0
+
+
+### Upload file(s)
+
+err_exit=0
+tmp_link=/tmp/.xteink.file
+
+## Cover
+[[ $m != cover ]] || {
+	ln -sf "$(realpath "$src")" "$tmp_link"
+	msg=$( curl -s --fail \
+		-F "file=@$tmp_link;filename=cover.bmp;type=image/bmp" \
+		http://$addr/upload?path="$dir_cover" ) || err_exit=$?
+	echo "$msg"; }
+
+## Web/books/images - to /web/<date>, /books or /images and such
+if [[ $m = web ]]; then
+	dt=$(printf '%(%Y-%m-%d)T' -1)
+	curl -s -F name=$dt -F path="$dir_web" http://$addr/mkdir &>/dev/null
+	dst="$dir_web"/$dt
+elif [[ $m = image ]]; then dst=$dir_images
+elif [[ $m = book ]]; then dst=$dir_books
+else declare -A src=(); fi # skips next loop
+for name in "${!src[@]}"; do
+	mt=${name##*.}; mt=${mt,,}; mt=${ext_mts[$mt]}
+	p="${src[$name]}"; ln -sf "$(realpath "$p")" "$tmp_link"
+	msg=$( curl -s --fail \
+		-F "file=@$tmp_link;filename=$name;type=$mt" \
+		http://$addr/upload?path=$dst 2>&1 ) && err= || err=$?
+	[[ -z "$err" ]] && echo "-- DONE :: $msg" \
+		|| { echo >&2 "-- ERROR :: Failed to upload file [ $p ]: $msg"; err_exit=$?; }
+done
+
+[[ ! -h "$tmp_link" ]] || rm -f "$tmp_link"
+exit $err_exit
