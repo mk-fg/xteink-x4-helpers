@@ -4,6 +4,7 @@ dir_cover=/sleep
 dir_web=/web
 dir_books=/books
 dir_images=/images
+wifi='xteink xteink-x4' # wifi-tmp unit/profile
 
 usage() {
 	local bin=${0##*/}
@@ -24,8 +25,8 @@ usage() {
 		echo "- by default .fb2 are treated as \"web longreads\" to put into $dir_web/<today-date> dirs"
 		echo "- book uploads go to $dir_books, image files to $dir_images"
 		echo
-		echo "Uses fping/curl and python \"unidecode\" module (for filename sanitization),"
-		echo " and runs \"sudo wifi-tmp\" script from the same repo to init/keep wifi open (for like 20m)."; }
+		echo "Uses fping/curl and python \"unidecode\" module (for filename sanitization), and runs"
+		echo " \"sudo wifi-tmp $wifi\" from the same repo to init/keep wifi open (for like 20m)."; }
 	exit ${1:-1}; }
 [[ -n "$1" && "$1" != -h && "$1" != --help \
 	&& "${@: -1}" != -h && "${@: -1}" != --help ]] || usage 0
@@ -94,7 +95,7 @@ addr=192.168.4.1 log=/tmp/.wifi-tmp.xteink.log
 touch $log && chown $USER: $log && chmod 600 $log # to access what wifi-tmp writes
 tail -F $log & tail_pid=$!
 trap '[[ -z "$tail_pid" ]] || kill $tail_pid' EXIT
-sudo -n -- wifi-tmp xteink xteink-x4
+sudo -n -- wifi-tmp $wifi
 ack=; fping -q -B1.2 -t100 -r5 "$addr" && ack=t || {
 	sleep 2 && fping -q -B1.2 -t100 -r11 "$addr" && ack=t; }
 [[ -n "$ack" ]] || { echo >&2 "ERROR: Failed to connect to Papyrix AP"; exit 1; }
