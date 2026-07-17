@@ -63,7 +63,12 @@ echo 'network={' >"$conf"; for line in $net
 		usb_toggle() { echo "$usb=$1" >/run/hwctl/fifo; }
 		trap 'sleep 1; usb_toggle off' EXIT
 		usb_toggle on && sleep 3; fi
-	exec > >(setsid gawk '{print strftime("[%FT%T]"), $0; fflush()}' >"$log") 2>&1
+	## fs.protected_regular can disallow writing to user-owned log, so replace it
+	log_tmp=$(mktemp /tmp/.wifi-tmp."$u".log.XXXXXX); exec 3>"$log_tmp"
+	chown --reference="$log" "$log_tmp" 2>/dev/null \
+		&& chmod --reference="$log" "$log_tmp" 2>/dev/null ||:
+	mv "$log_tmp" "$log"
+	exec > >(setsid gawk '{print strftime("[%FT%T]"), $0; fflush()}' >&3) 2>&1
 	setsid wpa_supplicant -i"$iface" -c "$conf" & p=$!
 	echo $p >"$pid"; [[ -z "$addr" ]] || ip addr rep "$addr" dev "$iface"
 	wait $p; ) & disown
