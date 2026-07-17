@@ -21,6 +21,7 @@ Table of Contents:
 
     - [xteink-send](#hdr-xteink-send)
     - [wifi-tmp](#hdr-wifi-tmp)
+    - [xteink-xtc](#hdr-xteink-xtc)
 
 - [Links](#hdr-links)
 
@@ -151,6 +152,19 @@ from other devices (e.g. any laptop when not on home WiFi network).
 
 [wifi-tmp]: wifi-tmp
 [wpa_supplicant]: https://w1.fi/wpa_supplicant/
+
+<a name=hdr-xteink-xtc></a>
+## [xteink-xtc]
+
+Python script to convert image(s) to XTC/XTCH format, supported by all Xteink
+firmwares. XTC is 1-bit black-and-white, while XTCH works for nicer 2-bit
+white + black + 2 shades of gray format.
+
+Uses [PIL/pillow] module for loading images, and optionally [numpy]
+for more efficient XTCH color processing, if it's available (can be imported).
+
+[PIL/pillow]: https://pillow.readthedocs.io/
+[numpy]: https://numpy.org/
 
 
 <a name=hdr-links></a>
