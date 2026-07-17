@@ -1,29 +1,29 @@
 #!/bin/bash
 
-dir_cover=/sleep
-dir_web=/web
-dir_books=/books
-dir_images=/images
+dir_cover=/sleep dir_web=/web dir_books=/books
+dir_notes=/notes dir_images=/images
 wifi='xteink xteink-x4' # wifi-tmp unit/profile
 
 usage() {
 	local bin=${0##*/}
 	[[ $1 -eq 0 ]] || exec 1>&2
 	echo "Usage: $bin cover.bmp"
-	echo "Usage: $bin <web-longread>.fb2 ..."
-	echo "Usage: $bin b[ook] <book>.fb2 ..."
+	echo "Usage: $bin <web-longread>.<fb2/epub> ..."
+	echo "Usage: $bin <note>.<html/xtc/xtch> ..."
 	echo "Usage: $bin <image>.<jpg/png/bmp> ..."
+	echo "Usage: $bin b[ook] <book>.<fb2/epub> ..."
 	echo "Usage: $bin p[ing]  # to keep wifi running for longer"
 	[[ $1 -ne 0 ]] || { echo
 		echo "Uploads specified file(s) to a xteink reader device, after enabling wifi"
-		echo " and confirming that it was able to connect, using appropriate dirs"
-		echo " for file-types and content - web pages/posts, books, images, etc."
+		echo " and confirming that it was able to connect, using different dirs"
+		echo " depending on source file names/types - web pages/posts, books, images, etc."
 		echo "\"$bin ping\" operation is to bump wifi timeout, e.g. when using webui."
 		echo
 		echo "Destination directories used on device:"
 		echo "- cover.bmp file gets uploaded to $dir_cover/cover.bmp as a sleep/power-off image"
-		echo "- by default .fb2 are treated as \"web longreads\" to put into $dir_web/<today-date> dirs"
-		echo "- book uploads go to $dir_books, image files to $dir_images"
+		echo "- by default .fb2/.epub treated as \"web longreads\" to put into $dir_web/<today-date> dirs"
+		echo "- .html/.xtc/.xtch files are stored as notes to $dir_notes, image files go to $dir_images"
+		echo "- explicitly-specified book uploads go to $dir_books"
 		echo
 		echo "Uses fping/curl and python \"unidecode\" module (for filename sanitization), and runs"
 		echo " \"sudo wifi-tmp $wifi\" from the same repo to init/keep wifi open (for like 20m)."; }
@@ -34,14 +34,17 @@ usage() {
 set -eo pipefail
 declare -A ext_mts=(
 	[fb2]=application/x-fictionbook+xml [epub]=application/epub+zip
-	[jpg]=image/jpeg [png]=image/png [bmp]=image/bmp )
+	[jpg]=image/jpeg [png]=image/png [bmp]=image/bmp
+	[xtc]=application/octet-stream [xtch]=application/octet-stream )
 mt_err='must be .fb2/epub (book/web), .jpg/png/bmp (image) or .bmp (cover)'
 if [[ "$1" = p || "$1" = ping ]]; then m=ping
 elif [[ "$1" = b || "$1" = book ]]; then m=book; shift
 else
 	m="${1##*.}"; m=${m,,}
 	[[ -n "${ext_mts[$m]}" ]] || { echo >&2 "ERROR: File [ $1 ] $mt_err"; exit 1; }
-	[[ "$m" = jpg || "$m" = png || "$m" = bmp ]] && m=image || m=web;
+	if [[ "$m" = xtc || "$m" = xtch ]]; then m=note
+		elif [[ "$m" = jpg || "$m" = png || "$m" = bmp ]]; then m=image
+		else m=web; fi
 fi
 [[ -n "$1" ]] || usage 1
 
@@ -53,9 +56,9 @@ else # Filenames are limited to ascii subset on xteink - fix with py script
 	p=; while read name; do
 		[[ -n "$p" ]] || { p=$name; continue; }
 		echo "  $p"; ext=${name##*.}; ext=${ext,,}
-		if [[ $m != image ]]
-				then [[ "$ext" = fb2 || "$ext" = epub ]]
-				else [[ "$ext" = jpg || "$ext" = png || "$ext" = bmp ]]; fi \
+		if [[ $m = note ]]; then [[ "$ext" = xtc || "$ext" = xtch ]]
+				elif [[ $m = image ]]; then [[ "$ext" = jpg || "$ext" = png || "$ext" = bmp ]]
+				else [[ "$ext" = fb2 || "$ext" = epub ]]; fi \
 			|| { echo >&2 "ERROR: File ($m) $mt_err"; exit 1; } # name already printed above
 		src[$name]=$p; p=
 	done < <(python /dev/stdin "$@" <<'EOF'
@@ -116,11 +119,12 @@ tmp_link=/tmp/.xteink.file
 		http://$addr/upload?path="$dir_cover" ) || err_exit=$?
 	echo "$msg"; }
 
-## Web/books/images - to /web/<date>, /books or /images and such
+## Other stuff - to /web/<date>, /images, /notes, /books and such
 if [[ $m = web ]]; then
 	dt=$(printf '%(%Y-%m-%d)T' -1)
 	curl -s -F name=$dt -F path="$dir_web" http://$addr/mkdir &>/dev/null
 	dst="$dir_web"/$dt
+elif [[ $m = note ]]; then dst=$dir_notes
 elif [[ $m = image ]]; then dst=$dir_images
 elif [[ $m = book ]]; then dst=$dir_books
 else declare -A src=(); fi # skips next loop
