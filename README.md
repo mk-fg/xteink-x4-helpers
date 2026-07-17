@@ -175,4 +175,7 @@ for more efficient XTCH color processing, if it's available (can be imported).
 
 - [Xteink X4] - device product, also widely available on aliexpress and wherever.
 - [Papyrix firmware] - fw that I use, initially picked for fb2 format support.
-- [cbz2xtc] - tool to bundling any images into a readable "book" file for this device.
+- [cbz2xtc] - CLI tool for converting .cbz image archives into .xtc/.xtch files for this device.
+- [cr2xt] - GUI tool to render common text/book files to .xtc/.xtch bitmap xteink formats.
+
+[cr2xt]: https://github.com/CrazyCoder/cr2xt
