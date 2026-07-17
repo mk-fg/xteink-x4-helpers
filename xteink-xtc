@@ -127,10 +127,10 @@ def main(args=None):
 	parser = argparse.ArgumentParser(
 		usage='%(prog)s [options] output.xtc[h] image.png ...',
 		formatter_class=argparse.RawTextHelpFormatter, description=dd('''
-			Convert image(s) to black-or-white .xtc or 2-bit grayscale .xtch file,
+			Convert image(s) to black-and-white .xtc or 2-bit grayscale .xtch file,
 				with images as pages in the same order, intended for Xteink X4 eink reader.
 			All images must be 480x800 in size, and won't be rescaled automatically.
-			Special "output" argument can be just "xtc" or "xtch" to convert every image to
+			Output file argument can be special "xtc" or "xtch", to convert every image to
 				separate files in the current dir, instead of bundling into one multi-page output.'''))
 	parser.add_argument('output', help=dd('''
 		Name/path to .xtc or .xtch file to produce from all the follow-up image arguments.
@@ -140,10 +140,11 @@ def main(args=None):
 	parser.add_argument('src_images', nargs='+', help=dd('''
 		Image file(s) to bundle into xtc/xtch, in the same order,
 			in formats supported by python PIL/Pillow module - https://pillow.readthedocs.io/'''))
-	parser.add_argument('-t', '--title', metavar='title', help=dd('''
-		Title to store in the resulting file metadata. Default: empty.
-		If used with multiple per-image files, will run str.format(p=png_path),
-			which can be used like [ --title='image: {p.slug}' ] - see also python pathlib.Path docs.'''))
+	parser.add_argument('-t', '--title', metavar='title', default='{p.stem}', help=dd('''
+		Title to store in the resulting file metadata, up to 128B. Default: %(default)s
+		Additionally formatted using title.format(p=file_path),
+			with either output xtc[h] file or input png path (for per-image files).
+		Example: --title='image: {p.stem}' (see also python pathlib.Path docs)'''))
 	opts = parser.parse_args(sys.argv[1:] if args is None else args)
 
 	out, _, out_ext = opts.output.rpartition('.')
