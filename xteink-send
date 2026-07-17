@@ -96,6 +96,7 @@ echo --------------------
 
 addr=192.168.4.1 log=/tmp/.wifi-tmp.xteink.log
 touch $log && chown $USER: $log && chmod 600 $log # to access what wifi-tmp writes
+exec > >(cat) 2>&1 # to fix something below (tail?) from messing-up terminal
 tail -F $log & tail_pid=$!
 trap '[[ -z "$tail_pid" ]] || kill $tail_pid' EXIT
 sudo -n -- wifi-tmp $wifi
