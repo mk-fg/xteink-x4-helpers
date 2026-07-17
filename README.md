@@ -156,15 +156,18 @@ from other devices (e.g. any laptop when not on home WiFi network).
 <a name=hdr-xteink-xtc></a>
 ## [xteink-xtc]
 
-Python script to convert image(s) to XTC/XTCH format, supported by all Xteink
-firmwares. XTC is 1-bit black-and-white, while XTCH works for nicer 2-bit
-white + black + 2 shades of gray format.
+Python script to convert image(s) to [XTC/XTCH format], supported by Xteink
+device firmwares. XTC is 1-bit black-and-white, while XTCH is a nicer
+2-bit white + black + 2 shades of gray format.
 
 Uses [PIL/pillow] module for loading images, and optionally [numpy]
 for more efficient XTCH color processing, if it's available (can be imported).
 
+[xteink-xtc]: xteink-xtc
+[XTC/XTCH format]: https://gist.github.com/CrazyCoder/b125f26d6987c0620058249f59f1327d
 [PIL/pillow]: https://pillow.readthedocs.io/
 [numpy]: https://numpy.org/
+[cbz2xtc]: https://github.com/srokl/cbz2xtc
 
 
 <a name=hdr-links></a>
@@ -173,5 +176,3 @@ for more efficient XTCH color processing, if it's available (can be imported).
 - [Xteink X4] - device product, also widely available on aliexpress and wherever.
 - [Papyrix firmware] - fw that I use, initially picked for fb2 format support.
 - [cbz2xtc] - tool to bundling any images into a readable "book" file for this device.
-
-[cbz2xtc]: https://github.com/srokl/cbz2xtc
