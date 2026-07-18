@@ -1,0 +1,42 @@
+Fixes ghosting in XTC/XTCH formats, which seem to be caused by refreshCallback()
+using "fast" refresh instead of half/full one.
+
+Not entirely sure why though, given that ReaderState should check getBitDepth
+and set pagesUntilFullRefresh_ = 1 for displayWithRefresh() to use HALF_REFRESH,
+but apparently this doesn't happen, maybe because getBitDepth() check is bogus.
+
+diff --git a/src/rendering/XtcPageRenderer.cpp b/src/rendering/XtcPageRenderer.cpp
+index ec835cc..33fea13 100644
+--- a/src/rendering/XtcPageRenderer.cpp
++++ b/src/rendering/XtcPageRenderer.cpp
+@@ -120,8 +120,6 @@ XtcPageRenderer::RenderResult XtcPageRenderer::render(xtc::XtcParser& parser, ui
+   renderer_.clearScreen();
+ 
+   if (bitDepth == 2) {
+-    render2BitGrayscale(plane1Buffer, plane2Buffer, pageWidth, pageHeight);
+-    refreshCallback();
+ 
+     // Grayscale rendering requires additional passes
+     const uint8_t* plane1 = plane1Buffer;
+@@ -138,6 +136,21 @@ XtcPageRenderer::RenderResult XtcPageRenderer::render(xtc::XtcParser& parser, ui
+       return (bit1 << 1) | bit2;
+     };
+ 
++    // XXX: Same loop + getPixelValue used instead of redundant render2BitGrayscale
++    // XXX: Explicit displayBuffer(HALF) instead of refreshCallback(),
++    //  which seemed to be translated to displayBuffer(FAST) here, causing ghosting.
++
++    // Pass 1: basic BW rendering
++    for (uint16_t y = 0; y < pageHeight; y++) {
++      for (uint16_t x = 0; x < pageWidth; x++) {
++        if (getPixelValue(x, y) >= 1) {
++          renderer_.drawPixel(x, y, true);
++        }
++      }
++      if (y % 100 == 0) esp_task_wdt_reset();
++    }
++    renderer_.displayBuffer(EInkDisplay::HALF_REFRESH);
++
+     // Pass 2: LSB buffer - mark DARK gray (value 1)
+     renderer_.clearScreen(0x00);
+     for (uint16_t y = 0; y < pageHeight; y++) {

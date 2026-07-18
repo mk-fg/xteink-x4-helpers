@@ -1,0 +1,22 @@
+displayBuffer(fast), which is the default mode, causes ghosting when flipping
+between grayscale images, so conditional displayBuffer(half) seem to be needed here.
+
+diff --git a/src/apps/ImageViewerApp.cpp b/src/apps/ImageViewerApp.cpp
+index ab89f8a..3f96484 100644
+--- a/src/apps/ImageViewerApp.cpp
++++ b/src/apps/ImageViewerApp.cpp
+@@ -209,9 +209,12 @@ static bool renderImage() {
+ 
+   ui::ButtonBar buttons("Back", "Menu", "<", ">");
+   ui::buttonBar(renderer, theme, buttons);
+-  renderer.displayBuffer();
+ 
+-  if (bitmap.hasGreyscale()) {
++  // XXX: conditional displayBuffer(fast/half) to fix ghosting
++  if (!bitmap.hasGreyscale()) renderer.displayBuffer();
++  else {
++    renderer.displayBuffer(EInkDisplay::HALF_REFRESH);
++
+     bitmap.rewindToData();
+     renderer.clearScreen(0x00);
+     renderer.setRenderMode(GfxRenderer::GRAYSCALE_LSB);
