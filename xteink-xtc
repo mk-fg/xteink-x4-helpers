@@ -73,6 +73,7 @@ def img_to_xth(img, grays=(42, 127, 212)):
 	if np:
 		arr = np.array(img)
 		# XTH colors: White=0(00), Light=1(01), Dark=2(10), Black=3(11)
+		# Different gray order from gist.github.com/CrazyCoder/b125f26d6987c0620058249f59f1327d
 		vals = np.zeros_like(arr, dtype=np.uint8)
 		vals[arr < black] = 3
 		vals[(arr >= black) & (arr < dark)] = 2
@@ -83,15 +84,14 @@ def img_to_xth(img, grays=(42, 127, 212)):
 		# Data is two separate bit0 || bit1 planes
 		data = ( np.packbits((vals & 1).astype(np.uint8), axis=1).tobytes()
 			+ np.packbits(((vals & 2) >> 1).astype(np.uint8), axis=1).tobytes() )
-	else:
+	else: # same thing but slower without numpy dep
 		pos, bits, img = 0, 8, img.load()
 		data = bytearray(480 * 800 // 4); pos_d2 = len(data) // 2
 		for x in range(479, -1, -1):
 			for y in range(0, 800):
-				c = img[x, y]
-				c = 3 if c < black else 2 if c < dark else 1 if c < light else 0
-				bits -= 1
-				data[pos] |= (c & 1) << bits
+				c = ( 3 if (c := img[x, y]) < black
+					else 2 if c < dark else 1 if c < light else 0 )
+				data[pos] |= (c & 1) << (bits := bits - 1)
 				data[pos + pos_d2] |= ((c & 2) >> 1) << bits
 				if not bits: pos += 1; bits = 8
 	return struct.pack(

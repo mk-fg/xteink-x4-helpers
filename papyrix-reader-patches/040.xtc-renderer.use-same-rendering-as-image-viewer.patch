@@ -3,7 +3,8 @@ using "fast" refresh instead of half/full one.
 
 Not entirely sure why though, given that ReaderState should check getBitDepth
 and set pagesUntilFullRefresh_ = 1 for displayWithRefresh() to use HALF_REFRESH,
-but apparently this doesn't happen, maybe because getBitDepth() check is bogus.
+but apparently this doesn't happen, maybe because that value is set too late and
+gets reset after every page flip.
 
 diff --git a/src/rendering/XtcPageRenderer.cpp b/src/rendering/XtcPageRenderer.cpp
 index ec835cc..33fea13 100644

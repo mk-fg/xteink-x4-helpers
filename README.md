@@ -39,36 +39,36 @@ With its "standing image" eink screen, for me it's a great device for a few task
 
 - Use any kind of reminder, checklist, reference image, etc as main/sleep screen,
   same as a paper note that you can pull out of your pocket and stare at anytime
-  with zero button-fiddling - always just there on screen like it's a piece paper.
+  with zero button-fiddling - always just there on screen like it's a piece of paper.
 
 - Send QR or barcode image to the device, to go pickup order or parcel which is
-  handed out quickly via such codes. Similar to putting a note as a cover screen,
+  handed out quickly via such codes - similar to putting a note as a cover screen,
   but for "need to present this code/image somewhere" purpose.
 
-- Carry a bunch of common notes, lists, references, maps, recipes, etc with me,
-  with an easy way to pull those up on-screen when needed, have those stay there
+- Have a bunch of common notes, lists, references, maps, recipes, etc to carry
+  somwhere if needed, with an easy way to pull those up on-screen and stay there,
   while doing whatever stuff.
 
-    Again kinda same as paper note - no concerns for sleep mode, battery drain,
-    or any kind of lighting issues - reflective eink display is great for all that.
+    Again kinda same as paper note - no concerns for timeouts, backlight, battery
+    drain, button fiddling - passive/reflective eink display is great for all that.
 
 - Reading internet or small-web marginalia - random interesting blog posts,
   think pieces, stories, explainers, wikipedia or even news articles, in a much
-  more convenient form-factor than PC display, laptop or phone.
+  more convenient form-factor than PC display, laptop or phone, and eink is
+  much nicer for prolonged staring at.
 
     Using [SingleFile] browser addon to store html and then convert/send it to a
     date-stamped dir on the device in one go, to read there anytime later.
 
-- And reading books too of course, anywhere/anytime, with a great screen and
+- And reading books too of course, anywhere/anytime, with great screen and
   form-factor for it.
 
-I almost never bother carrying a phone with me, as it's a complete crap usability-wise
+Almost never bother carrying a phone with me, as it's a complete crap usability-wise
 for many reasons (size, weight, battery, controls, bad UI/UX, worse apps, very fiddly
 and fragile, etc etc), esp. for all the tasks above, which is what I need most often from
 a portable-screen device, and this pocket tool is great for all that instead.
 
-Patches/tools/stuff here is to aid/help or enable all these use-cases in some way.
-
+Patches/tools/stuff here is to aid/help or enable all these use-cases in some way.\
 Thought to make one repository for those, as there seem to be an increasing number of them.
 
 [SingleFile]: https://www.getsinglefile.com/
@@ -78,19 +78,22 @@ Thought to make one repository for those, as there seem to be an increasing numb
 # Firmware patches
 
 I use [Papyrix firmware] at the moment, and [papyrix-reader-patches] dir has
-usually non-upstreamable tweaks to make stuff I use the thing for more convenient,
-by removing/disabling something else that I don't care about.
+usually non-upstreamable tweaks to make stuff I use device for more convenient,
+often by removing/disabling something else that I don't need.
 
 Each patch there should have a header at the top, describing what it does,
 but they tend to be trivial enough to just read.
 
-Can be applied via usual `patch -p1 < papyrix-reader-patches/...` command.\
+Can be applied via usual `patch -tNp1 < papyrix-reader-patches/...` command.\
 Often useful to do `--dry-run` first to check whether they still apply to latest upstream.
 
 `firmware.bin` file needs to be rebuilt and uploaded afterwards, as per upstream
 instructions, but the gist there is to run `make build` to produce
 `.pio/build/default/firmware.bin` and run something like `./papyrix-flasher flash ...`
 with device powered-on and USB-connected. Change-rebuilds are fast after initial one.
+
+Plenty of abstractions in that firmware code often look redundant and more complicated
+than the thing they do at the end, which might just be an artifact of vibe-coding.
 
 [Papyrix firmware]: https://github.com/bigbag/papyrix-reader/
 [papyrix-reader-patches]: papyrix-reader-patches
@@ -99,26 +102,26 @@ with device powered-on and USB-connected. Change-rebuilds are fast after initial
 <a name=hdr-tools></a>
 # Tools
 
-Helper scripts for terminal-centered worflow, as I tend to use zsh command-line
+Helper scripts for terminal-centered workflow, as I tend to use zsh command-line
 there as a primary/origin interface for everything - to convert formats and
 simplify any routine file management operations.
 
 <a name=hdr-xteink-send></a>
 ## [xteink-send]
 
-Very simple `xteink-send web-longread.fb2` which does everything
-else needed to run wifi connection (auto-closing it after 20min of idleness),
-waiting for it to establish (if not open already), mkdir `/web/<date>`,
+File transfer tool, to run as `xteink-send web-longread.fb2`, which then does
+everything else needed for keeping wifi connection (auto-closing it after 20min of
+idleness), waiting for it to establish (if not open already), mkdir `/web/<date>`,
 and run curl to upload file there, with proper filename sanitization
 (stripping characters that firmware doesn't support, like `:`, `?`, `*`, unicode, etc),
-request endpoint/formatting/hacks and per-file success/error checking/reporting.
+handling request endpoint/encoding/hacks and per-file success/error checking/reporting.
 
-Basically one run-and-done tool for easy uploads from the command line.
+Basically one run-and-done tool for easy file uploads from the command line.
 
-Under the hood uses [wifi-tmp script] (that can be found next to it) via
-sudo to keep wifi link running (and enable usb port for it if [hwctl] is used),
-as well as common [fping]/[curl] tools and python [unidecode] mode for
-unicode-to-ascii filename transliteration, if it is available to import.
+Under the hood uses [wifi-tmp script] (found next to this one) via sudo
+to keep wifi link running (and enable usb port for it if [hwctl] is used),
+as well as common [fping]/[curl] tools and python [unidecode] module for
+unicode-to-ascii filename transliteration, if it's available to import.
 
 Makes some assumptions wrt where to put files, set at the top of the script
 and listed in `-h/--help` output.
@@ -134,8 +137,8 @@ and listed in `-h/--help` output.
 ## [wifi-tmp]
 
 Root script to run via sudo exception, to enable and keep wifi running
-in a reasonably safe manner, until preset inactivity timeout expires -
-as also mentioned for [xteink-send] script above.
+in a reasonably safe manner, until preset inactivity timeout expires,
+used by/for [xteink-send] script above.
 
 Running with `-h/--help` should list profiles from hardcoded wifi-tmp.profiles
 file for [wpa_supplicant], and a couple other parameters, like interface name and
@@ -148,7 +151,7 @@ Papyrix AP is unsecured like that, but then also has quite a short range,
 so probably shouldn't be a problem in practice, but otherwise temp-hostapd +
 stored connection parameters can be used instead - more PITA to make it work
 (entering pw via left-right buttons), and passwordless AP is easier to access
-from other devices (e.g. any laptop when not on home WiFi network).
+from other devices (e.g. any laptop or phone when not on home WiFi network).
 
 [wifi-tmp]: wifi-tmp
 [wpa_supplicant]: https://w1.fi/wpa_supplicant/
@@ -157,17 +160,31 @@ from other devices (e.g. any laptop when not on home WiFi network).
 ## [xteink-xtc]
 
 Python script to convert image(s) to [XTC/XTCH format], supported by Xteink
-device firmwares. XTC is 1-bit black-and-white, while XTCH is a nicer
-2-bit white + black + 2 shades of gray format.
+device firmwares. XTC is 1-bit black-and-white, while XTCH is a nicer 2-bit
+white + black + 2 shades of gray format, with both supporting pages of images,
+and chapters with table of contents for those.
 
-Uses [PIL/pillow] module for loading images, and optionally [numpy]
+Format is intended for comics/manga, but is also nice for any kind of externally
+pre-formatted text/documents, notes, etc, which can be exported to a set of images
+in advance, dithered/tweaked to work best on grayscale eink screen as-needed,
+and then bundled together into one file with this tool.
+
+Script uses [PIL/pillow] module for loading images, and optionally [numpy]
 for more efficient XTCH color processing, if it's available (can be imported).
+
+XTCH format produced by the script is same as in [cbz2xtc] tool, with
+black-dark-light-white color ordering, that seem to be incorrect according to
+[CrazyCoder's gist] with format descrption (also linked above, where order is
+black-light-dark-white), but this order seem to be implemented in [Papyrix firmware],
+so script uses that, instead of (more difficult) patching of bit order there.
+Don't know which of the two orders is supported by other firmwares, didn't check.
 
 [xteink-xtc]: xteink-xtc
 [XTC/XTCH format]: https://gist.github.com/CrazyCoder/b125f26d6987c0620058249f59f1327d
 [PIL/pillow]: https://pillow.readthedocs.io/
 [numpy]: https://numpy.org/
 [cbz2xtc]: https://github.com/srokl/cbz2xtc
+[CrazyCoder's gist]: https://gist.github.com/CrazyCoder/b125f26d6987c0620058249f59f1327d
 
 
 <a name=hdr-links></a>
