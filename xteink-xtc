@@ -35,15 +35,14 @@ def file_replacement(p):
 
 def img_to_xtg(img, dither=True):
 	assert img.size == (sz := (480, 800)), f'Image size {img.size} != {sz}'
-	img.convert( '1', dither=pil.Dither.NONE
-		if not dither else pil.FLOYDSTEINBERG )
+	img = img.convert('1', dither=pil.Dither.NONE if not dither else pil.FLOYDSTEINBERG)
 	md5 = hl.md5(data := img.tobytes()).digest()[:8]
 	return struct.pack( '<4sHHBBI8s', b'XTG\x00', *sz,
 		color_mode := 0, compression := 0, len(data), md5 ) + data
 
 def img_to_xth(img, grays=(42, 127, 212)):
 	assert img.size == (sz := (480, 800)), f'Image size {img.size} != {sz}'
-	img.convert('L') # ITU-R 601-2 L = R*.299 + G*.587 + B*.114
+	img = img.convert('L') # ITU-R 601-2 L = R*.299 + G*.587 + B*.114
 	black, dark, light = grays
 	if np:
 		arr = np.array(img)
