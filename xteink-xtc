@@ -12,6 +12,7 @@ class adict(dict):
 	def __init__(self, *args, **kws):
 		super().__init__(*args, **kws)
 		self.__dict__ = self
+	def __call__(self, **kws): self.update(kws); return self
 
 def attrs(o, **attrs):
 	for k, v in attrs.items(): setattr(o, k, v)
@@ -99,7 +100,7 @@ def img_to_xth(img, grays=(42, 127, 212)):
 		color_mode := 0, compression := 0,
 		len(data), hl.md5(data).digest()[:8] ) + data
 
-def write_xtch(out, imgs, fmt, title=''):
+def write_xtch(out, imgs, opts):
 	# Format: hdr 56B || meta 256B || toc n*96B=0 || index n_pages*16B || pages...
 	# https://gist.github.com/CrazyCoder/b125f26d6987c0620058249f59f1327d
 	index = bytearray()
@@ -109,13 +110,13 @@ def write_xtch(out, imgs, fmt, title=''):
 		index += struct.pack('<QIHH', pos, n := len(img), w, h)
 		pos += n
 	hdr = struct.pack(
-		'<4s BBH BBBB I QQQQQ', b'XTCH' if fmt is fmt.xtch else b'XTC\x00',
+		'<4s BBH BBBB I QQQQQ', b'XTCH' if opts.fmt is opts.fmt.xtch else b'XTC\x00',
 		ver_major := 1, ver_minor := 0, page_count := len(imgs),
 		read_direction := 0, has_meta := 1, has_thumbs := 0, has_toc := 0, curr_page := 1,
 		meta_pos := 56, index_pos := meta_pos + 256, data_pos, thumbs_pos := 0, toc_pos := 0 )
 	meta = bytearray(256) # title[0:80] author[80:c0] publisher[c0:e0] lang[e0:f0] ...
-	title = title.encode()[:0x7f]; meta[:len(title)] = title; struct.pack_into(
-		'<IHH', meta, 0xf0, ts := int(time.time()), n_cover := 0, n_toc := 0 )
+	title = opts.title.encode()[:0x7f]; meta[:len(title)] = title
+	struct.pack_into('<IHH', meta, 0xf0, opts.ts, n_cover := 0, n_toc := 0)
 	for chunk in [hdr, meta, index, *imgs]: out.write(chunk)
 
 
@@ -144,6 +145,8 @@ def main(args=None):
 		Additionally formatted using title.format(p=file_path),
 			with either output xtc[h] file or input png path (for per-image files).
 		Example: --title='image: {p.stem}' (see also python pathlib.Path docs)'''))
+	parser.add_argument('-T', '--creation-time', metavar='posix-time', type=int, help=dd('''
+		Unix/posix timestamp (like `date +%s`) to use as creation time, current time by default.'''))
 	opts = parser.parse_args(sys.argv[1:] if args is None else args)
 
 	out, _, out_ext = opts.output.rpartition('.')
@@ -159,10 +162,13 @@ def main(args=None):
 			exe.map(lambda p: img_bs(ctx.enter_context(pil.open(p))), imgs) ))
 		out_files, out_file = list(), lambda p: \
 			out_files.append(tmp := ctx.enter_context(safe_replacement(p))) or tmp
-		if out: tasks = [attrs(exe.submit(write_xtch, out_file(
-			fn := f'{out}.{out_ext}' ), imgs.values(), out_fmt, title_fmt(fn)), fn=fn)]
-		else: tasks = list(
-			attrs(exe.submit(write_xtch, out_file(fn), img, out_fmt, title_fmt(p)), fn=fn)
+		xtch_opts = adict( fmt=out_fmt,
+			title='', ts=opts.creation_time or int(time.time()) )
+		if out: tasks = [attrs(exe.submit(
+			write_xtch, out_file(fn := f'{out}.{out_ext}'),
+			imgs.values(), xtch_opts(title=title_fmt(fn)) ), fn=fn)]
+		else: tasks = list( attrs(exe.submit(
+				write_xtch, out_file(fn), img, xtch_opts(title=title_fmt(p)) ), fn=fn)
 			for fn, p, img in ((f'{p.stem}.{out_ext}', p, img) for p, img in imgs) )
 		for task in cf.as_completed(tasks):
 			try: task.result()
