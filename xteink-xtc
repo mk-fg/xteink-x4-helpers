@@ -34,15 +34,15 @@ def file_replacement(p):
 
 
 def img_to_xtg(img, dither=True):
-	assert img.size == (480, 800), img.size
+	assert img.size == (sz := (480, 800)), f'Image size {img.size} != {sz}'
 	img.convert( '1', dither=pil.Dither.NONE
 		if not dither else pil.FLOYDSTEINBERG )
 	md5 = hl.md5(data := img.tobytes()).digest()[:8]
-	return struct.pack( '<4sHHBBI8s', b'XTG\x00', 480, 800,
+	return struct.pack( '<4sHHBBI8s', b'XTG\x00', *sz,
 		color_mode := 0, compression := 0, len(data), md5 ) + data
 
 def img_to_xth(img, grays=(42, 127, 212)):
-	assert img.size == (480, 800), img.size
+	assert img.size == (sz := (480, 800)), f'Image size {img.size} != {sz}'
 	img.convert('L') # ITU-R 601-2 L = R*.299 + G*.587 + B*.114
 	black, dark, light = grays
 	if np:
@@ -69,7 +69,7 @@ def img_to_xth(img, grays=(42, 127, 212)):
 				data[pos] |= (c & 1) << (bits := bits - 1)
 				data[pos + pos_d2] |= ((c & 2) >> 1) << bits
 				if not bits: pos += 1; bits = 8
-	return struct.pack( '<4sHHBBI8s', b'XTH\x00', 480, 800,
+	return struct.pack( '<4sHHBBI8s', b'XTH\x00', *sz,
 		color_mode := 0, compression := 0, len(data), hl.md5(data).digest()[:8] ) + data
 
 def write_xtch(out, imgs, opts):
@@ -118,7 +118,7 @@ def main(args=None):
 			with either output xtc[h] file or input png path (for per-image files).
 		Example: --title='image: {p.stem}' (see also python pathlib.Path docs)'''))
 	parser.add_argument('-T', '--creation-time', metavar='posix-time', type=int, help=dd('''
-		Unix/posix timestamp (like `date +%s`) to use as creation time, current time by default.'''))
+		Posix/unix timestamp (like `date +%%s`) to use as creation time, current time by default.'''))
 	opts = parser.parse_args(sys.argv[1:] if args is None else args)
 
 	out, _, out_ext = opts.output.rpartition('.')
@@ -127,11 +127,20 @@ def main(args=None):
 		' be either a filename/path ending in .xtc/.xtch, or literal xtc/xtch' )
 	title_fmt = lambda p: (opts.title or '').format(p=pl.Path(p))
 
-	img_bs = {out_fmt.xtc: img_to_xtg, out_fmt.xtch: img_to_xth}[out_fmt]
 	with cl.ExitStack() as ctx:
 		exe = ctx.enter_context(cf.ThreadPoolExecutor())
-		imgs = dict(zip( imgs := list(pl.Path(p) for p in opts.src_images),
-			exe.map(lambda p: img_bs(ctx.enter_context(pil.open(p))), imgs) ))
+
+		# Load all images - PIL should release GIL, so can be faster in threads
+		img_load = {out_fmt.xtc: img_to_xtg, out_fmt.xtch: img_to_xth}[out_fmt]
+		img_load = lambda p,_bmp=img_load: _bmp(ctx.enter_context(pil.open(p)))
+		imgs, tasks = dict(), list(attrs(exe.submit(
+			img_load, p ), p=pl.Path(p)) for p in opts.src_images)
+		for task in cf.as_completed(tasks):
+			try: img = task.result(); imgs[task.p] = img
+			except Exception as err: err.add_note(
+				f' Failed loading image: {task.p}' ); raise
+
+		# Generate output file(s)
 		out_files, out_file = list(), lambda p: \
 			out_files.append(tmp := ctx.enter_context(file_replacement(p))) or tmp
 		xtch_opts = adict( fmt=out_fmt,
@@ -140,12 +149,12 @@ def main(args=None):
 			write_xtch, out_file(fn := f'{out}.{out_ext}'),
 			imgs.values(), xtch_opts(title=title_fmt(fn)) ), fn=fn)]
 		else: tasks = list( attrs(exe.submit(
-				write_xtch, out_file(fn), img, xtch_opts(title=title_fmt(p)) ), fn=fn)
-			for fn, p, img in ((f'{p.stem}.{out_ext}', p, img) for p, img in imgs) )
+				write_xtch, out_file(fn), [img], xtch_opts(title=title_fmt(p)) ), fn=fn)
+			for fn, p, img in ((f'{p.stem}.{out_ext}', p, img) for p, img in imgs.items()) )
 		for task in cf.as_completed(tasks):
 			try: task.result()
 			except Exception as err: err.add_note(
 				f' Failed creating {out_fmt.name} bundle: {task.fn}' ); raise
-		for out in out_files: out.commit = True
+		for out in out_files: out.commit = True # files put in-place all-or-nothing
 
 if __name__ == '__main__': sys.exit(main())
