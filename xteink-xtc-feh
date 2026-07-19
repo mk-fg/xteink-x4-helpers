@@ -1,0 +1,27 @@
+#!/bin/bash
+
+xtch=$1 pre=/tmp/.xteink-xtc-feh.bmp; shift; src=( "$@" )
+[[ -n "$xtch" && "${#src[@]}" -gt 0 ]] || { echo >&2 "Usage: $0 file.xtch image.bmp..."; exit 1; }
+
+xtc=./xteink-xtc xtc_args=( --percents -p "$pre" -- "$xtch" "${src[@]}" ) # + adjustments from zenity sliders
+feh=feh feh_args=( # used to display and auto-reload image on the second screen
+  -ZNxsrd. -g=1920x1080+1920 -B checks --info 'echo -e " [ %t %wx%h %Ppx %SB %z%% ]\n"' )
+
+declare -A last=( [br]=100 [co]=100 [sh]=100 ); render= open=t
+exec 2> >(grep -vaP '^(\(zenity:\d+\): (Gtk|Gdk|Adwaita)-\S+ |\s*$)')
+fdlinecombine \
+  <(zenity --title='brightness' --scale --text='' --print-partial \
+    --value 100 --min-value 20 --max-value 500 | stdbuf -oL sed 's/^/br /') \
+  <(zenity --title='contrast' --scale --text='' --print-partial \
+    --value 100 --min-value 20 --max-value 500 | stdbuf -oL sed 's/^/co /') \
+  <(zenity --title='sharpness' --scale --text='' --print-partial \
+    --value 100 --min-value 10 --max-value 1000 | stdbuf -oL sed 's/^/sh /') |
+while read -rt 0.5 t val ||:; do
+  [[ -z "$val" ]] || { last[$t]=$val; render=t; continue; }
+  [[ -z "$render" ]] && continue || render=
+  [[ -n "${last[br]}" && -n "${last[co]}" && -n "${last[sh]}" ]] || continue
+  opts=( --brightness "${last[br]}" --contrast "${last[co]}" --sharpness "${last[sh]}" )
+  echo "[ $(printf '%(%F %T)T' -1) ] Render: ${opts[@]}"
+  "$xtc" "${opts[@]}" "${xtc_args[@]}" && sleep 0.5
+  [[ -z "$open" ]] || { "$feh" "${feh_args[@]}" -- "$(realpath "$pre")" & open=; }
+done

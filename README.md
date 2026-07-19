@@ -22,6 +22,7 @@ Table of Contents:
     - [xteink-send](#hdr-xteink-send)
     - [wifi-tmp](#hdr-wifi-tmp)
     - [xteink-xtc](#hdr-xteink-xtc)
+    - [xteink-xtc-feh](#hdr-xteink-xtc-feh)
 
 - [Links](#hdr-links)
 
@@ -172,6 +173,13 @@ and then bundled together into one file with this tool.
 Script uses [PIL/pillow] module for loading images, and optionally [numpy]
 for more efficient XTCH color processing, if it's available (can be imported).
 
+Has options for brightness/contrast/sharpness adjustments, as well as
+gray bitmap thresholds, to tweak resulting images in .xtc(h) file(s),
+with `-p/--preview` option allowing to export one of the images to
+BMP for easy inspection.\
+See also [xteink-xtc-feh] script for trying such tweaks out with interactive
+sliders and immediate/dynamic result preview.
+
 XTCH format produced by the script is same as in [cbz2xtc] tool, with
 black-dark-light-white color ordering, that seem to be incorrect according to
 [CrazyCoder's gist] with format descrption (also linked above, where order is
@@ -185,6 +193,27 @@ Don't know which of the two orders is supported by other firmwares, didn't check
 [numpy]: https://numpy.org/
 [cbz2xtc]: https://github.com/srokl/cbz2xtc
 [CrazyCoder's gist]: https://gist.github.com/CrazyCoder/b125f26d6987c0620058249f59f1327d
+
+<a name=hdr-xteink-xtc-feh></a>
+## [xteink-xtc-feh]
+
+Trivial wrapper to twiddle [xteink-xtc] image-adjustment values interactively
+(using GUI [zenity] sliders) and see immediate result in [feh image viewer].
+
+Creates zenity slider windows for each relevant parameter, combines their outputs
+via [fdlinecombine] tool, and when any slider is moved, waits for half-second of
+inactivity (for changes to settle) and runs [xteink-xtc] (with same CLI parameters),
+creating .xtc(h) file + preview image, that's immediately displayed/refreshed by [feh]
+(should monitor and auto-reload preview file on changes, as it gets updated from sliders).
+
+Limits for zenity sliders, as well as image-viewer command
+should be easy to tweak in that script itself.
+
+[xteink-xtc-feh]: xteink-xtc-feh
+[zenity]: https://gitlab.gnome.org/GNOME/zenity
+[feh image viewer]: https://feh.finalrewind.org/
+[fdlinecombine]: https://github.com/vi/fdlinecombine
+[feh]: https://feh.finalrewind.org/
 
 
 <a name=hdr-links></a>

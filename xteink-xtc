@@ -145,6 +145,8 @@ def main(args=None):
 		metavar='0-1.0-inf', type=float, help='Contrast adjustment factor.')
 	group.add_argument('-s', '--sharpness',
 		metavar='0-1.0-2.0', type=float, help='Sharpness adjustment factor. Goes up to 2.0.')
+	group.add_argument('--percents', action='store_true',
+		help='Divide all adjustment values above by 100, i.e. 100 on command-line translates to 1.')
 	group.add_argument('-g', '--grays',
 		metavar='black:dark:light', default='42:127:212', help=dd('''
 			3x 0-255 black/dark/light thresholds for making 2-bit grayscale colors in XTCH files.
@@ -167,7 +169,9 @@ def main(args=None):
 	pre, grays = adict(n=0, dst=None), tuple(map(int, opts.grays.split(':')))
 	if p := opts.preview: p, _, n = p.partition(':'); pre.update(p=p, n=int(n) if n else 1)
 	img_pre = lambda n: n == pre.n and pre.dst
-	img_adjust = lambda img: img_proc(img, opts.brightness, opts.contrast, opts.sharpness)
+	adjs = opts.brightness, opts.contrast, opts.sharpness
+	if opts.percents: adjs = list(v/100 for v in adjs)
+	img_adjust = lambda img: img_proc(img, *adjs)
 	img_bmp = { out_fmt.xtc: lambda img,n: img_to_xtg(img, pre=img_pre(n)),
 		out_fmt.xtch: lambda img,n: img_to_xth(img, grays, pre=img_pre(n)) }[out_fmt]
 
