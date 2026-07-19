@@ -3,7 +3,7 @@
 import hashlib as hl, pathlib as pl, contextlib as cl, concurrent.futures as cf
 import os, sys, enum, struct, tempfile, time
 
-import PIL.Image as pil # https://pillow.readthedocs.io/
+import PIL.Image as pil, PIL.ImageEnhance as pile # https://pillow.readthedocs.io/
 try: import numpy as np # https://numpy.org/
 except ImportError: np = None # optional for better performance
 
@@ -33,14 +33,22 @@ def file_replacement(p):
 			except FileNotFoundError: pass
 
 
-def img_to_xtg(img, dither=True):
+def img_proc(img, bright=None, contrast=None, sharp=None):
+	for factor, wrap in [ (bright, pile.Brightness),
+			(contrast, pile.Contrast), (sharp, pile.Sharpness) ]:
+		if factor in [1.0, None]: continue
+		img = wrap(img).enhance(factor)
+	return img
+
+def img_to_xtg(img, dither=True, pre=None):
 	assert img.size == (sz := (480, 800)), f'Image size {img.size} != {sz}'
 	img = img.convert('1', dither=pil.Dither.NONE if not dither else pil.FLOYDSTEINBERG)
+	if pre: img.save(pre, 'bmp')
 	md5 = hl.md5(data := img.tobytes()).digest()[:8]
 	return struct.pack( '<4sHHBBI8s', b'XTG\x00', *sz,
 		color_mode := 0, compression := 0, len(data), md5 ) + data
 
-def img_to_xth(img, grays=(42, 127, 212)):
+def img_to_xth(img, grays=(42, 127, 212), pre=None):
 	assert img.size == (sz := (480, 800)), f'Image size {img.size} != {sz}'
 	img = img.convert('L') # ITU-R 601-2 L = R*.299 + G*.587 + B*.114
 	black, dark, light = grays
@@ -68,6 +76,12 @@ def img_to_xth(img, grays=(42, 127, 212)):
 				data[pos] |= (c & 1) << (bits := bits - 1)
 				data[pos + pos_d2] |= ((c & 2) >> 1) << bits
 				if not bits: pos += 1; bits = 8
+	if pre:
+		mid = lambda c1, c2: c1 + round((c2 - c1) / 2)
+		c_dark, c_light = mid(black, dark), mid(dark, light)
+		img = img.point(list(( 0 if c < black else c_dark
+			if c < dark else c_light if c < light else 255 ) for c in range(256)))
+		img.save(pre, 'bmp')
 	return struct.pack( '<4sHHBBI8s', b'XTH\x00', *sz,
 		color_mode := 0, compression := 0, len(data), hl.md5(data).digest()[:8] ) + data
 
@@ -111,13 +125,37 @@ def main(args=None):
 	parser.add_argument('src_images', nargs='+', help=dd('''
 		Image file(s) to bundle into xtc/xtch, in the same order,
 			in formats supported by python PIL/Pillow module - https://pillow.readthedocs.io/'''))
-	parser.add_argument('-t', '--title', metavar='title', default='{p.stem}', help=dd('''
+
+	group = parser.add_argument_group('Output file metadata')
+	group.add_argument('-t', '--title', metavar='title', default='{p.stem}', help=dd('''
 		Title to store in the resulting file metadata, up to 128B. Default: %(default)s
 		Additionally formatted using title.format(p=file_path),
 			with either output xtc[h] file or input png path (for per-image files).
 		Example: --title='image: {p.stem}' (see also python pathlib.Path docs)'''))
-	parser.add_argument('-T', '--creation-time', metavar='posix-time', type=int, help=dd('''
+	group.add_argument('-T', '--creation-time', metavar='posix-time', type=int, help=dd('''
 		Posix/unix timestamp (like `date +%%s`) to use as creation time, current time by default.'''))
+
+	group = parser.add_argument_group('Image processing', description=dd('''
+		Brightness/contrast/sharpness adjustment factors, in fractional values.
+		From 1.0 original, down to 0 (black/gray/blur) and >1 values for bright/contrast/sharp.
+		Operations get applied in same order as how options are listed below.'''))
+	group.add_argument('-b', '--brightness',
+		metavar='0-1.0-inf', type=float, help='Brightness adjustment factor.')
+	group.add_argument('-c', '--contrast',
+		metavar='0-1.0-inf', type=float, help='Contrast adjustment factor.')
+	group.add_argument('-s', '--sharpness',
+		metavar='0-1.0-2.0', type=float, help='Sharpness adjustment factor. Goes up to 2.0.')
+	group.add_argument('-g', '--grays',
+		metavar='black:dark:light', default='42:127:212', help=dd('''
+			3x 0-255 black/dark/light thresholds for making 2-bit grayscale colors in XTCH files.
+			Applied after brightness/contrast/sharpness adjustments and
+				ITU-R 601-2 color-grayscale conversion, if needed (L = R*.299 + G*.587 + B*.114).
+			Color under first value will be black, then dark, light, white. Default: %(default)s'''))
+	group.add_argument('-p', '--preview', metavar='file[:n]', help=dd('''
+		Store image after all adjustments and black-and-white/grayscale conversion to a BMP file.
+		First image of the specified ones by default, add :<n> to pick nth one instead (1=first).
+		Can be used with e.g. zenity + feh to interactively adjust parameters with a preview.'''))
+
 	opts = parser.parse_args(sys.argv[1:] if args is None else args)
 
 	out, _, out_ext = opts.output.rpartition('.')
@@ -126,18 +164,24 @@ def main(args=None):
 		' be either a filename/path ending in .xtc/.xtch, or literal xtc/xtch' )
 	title_fmt = lambda p: (opts.title or '').format(p=pl.Path(p))
 
+	pre, grays = adict(n=0, dst=None), tuple(map(int, opts.grays.split(':')))
+	if p := opts.preview: p, _, n = p.partition(':'); pre.update(p=p, n=int(n) if n else 1)
+	img_pre = lambda n: n == pre.n and pre.dst
+	img_adjust = lambda img: img_proc(img, opts.brightness, opts.contrast, opts.sharpness)
+	img_bmp = { out_fmt.xtc: lambda img,n: img_to_xtg(img, pre=img_pre(n)),
+		out_fmt.xtch: lambda img,n: img_to_xth(img, grays, pre=img_pre(n)) }[out_fmt]
+
 	with cl.ExitStack() as ctx:
 		exe = ctx.enter_context(cf.ThreadPoolExecutor())
 
 		# Load all images - PIL should release GIL, so can be faster in threads
-		img_load = {out_fmt.xtc: img_to_xtg, out_fmt.xtch: img_to_xth}[out_fmt]
-		img_load = lambda p,_bmp=img_load: _bmp(ctx.enter_context(pil.open(p)))
+		if pre.n: pre.dst = ctx.enter_context(file_replacement(pre.p))
+		img_load = lambda p, n: img_bmp(img_adjust(ctx.enter_context(pil.open(p))), n)
 		imgs, tasks = dict(), list(attrs(exe.submit(
-			img_load, p ), p=pl.Path(p)) for p in opts.src_images)
+			img_load, p, n ), p=pl.Path(p)) for n, p in enumerate(opts.src_images, 1))
 		for task in cf.as_completed(tasks):
 			try: img = task.result(); imgs[task.p] = img
-			except Exception as err: err.add_note(
-				f' Failed loading image: {task.p}' ); raise
+			except Exception as err: err.add_note(f' Failed loading image: {task.p}'); raise
 
 		# Generate output file(s)
 		out_files, out_file = list(), lambda p: \
@@ -154,6 +198,9 @@ def main(args=None):
 			try: task.result()
 			except Exception as err: err.add_note(
 				f' Failed creating {out_fmt.name} bundle: {task.fn}' ); raise
-		for out in out_files: out.commit = True # files put in-place all-or-nothing
+
+		# Put all files in-place all-or-nothing on context exit
+		if pre.n: pre.dst.commit = True
+		for out in out_files: out.commit = True
 
 if __name__ == '__main__': sys.exit(main())
