@@ -48,9 +48,23 @@ else
 fi
 [[ -n "$1" ]] || usage 1
 
+
+### Check/fix inputs
+
 if [[ $m = ping ]]; then shift; [[ -z "$1" ]] || usage 1
-elif [[ $m != book && "$1" = cover.bmp ]]
-	then m=cover; src="$1"; echo "Upload [ $m ] :: $src"
+
+elif [[ $m != book && "${1##*/}" = cover.bmp ]]; then
+	m=cover; src="$1"; echo "Upload [ $m ] :: $src"
+	if ! command -vp magick >/dev/null; then w=480 h=800
+		else read w h < <(magick identify -format '%w %h\n' "$src"); fi
+	if [[ $h = 800 && $w = 480 ]]; then : # all good
+	elif [[ $w = 800 && $h = 480 ]]; then
+		magick mogrify -rotate 90 -compress none BMP3:"$src"
+		echo "NOTE: Image [ $src ] auto-rotated 90deg clockwise"
+	elif [[ -z "$XT_RESIZE" ]]; then
+		echo >&2 "ERROR: Image size [ $src $w x $h ] must be 480x800 or 800x480 - aborting" \
+			$'\n'"  ( set XT_RESIZE env-var to bypass this error and allow resized images )"; exit 1; fi
+
 else # Filenames are limited to ascii subset on xteink - fix with py script
 	declare -A src; echo "Upload(s) [ $m ] ::"
 	p=; while read name; do

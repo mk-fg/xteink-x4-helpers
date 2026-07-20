@@ -113,7 +113,7 @@ simplify any routine file management operations.
 File transfer tool, to run as `xteink-send web-longread.fb2`, which then does
 everything else needed for keeping wifi connection (auto-closing it after 20min of
 idleness), waiting for it to establish (if not open already), mkdir `/web/<date>`,
-and run curl to upload file there, with proper filename sanitization
+check/process image file(s), and run curl to upload file there, with filename sanitization
 (stripping characters that firmware doesn't support, like `:`, `?`, `*`, unicode, etc),
 handling request endpoint/encoding/hacks and per-file success/error checking/reporting.
 
@@ -121,8 +121,9 @@ Basically one run-and-done tool for easy file uploads from the command line.
 
 Under the hood uses [wifi-tmp script] (found next to this one) via sudo
 to keep wifi link running (and enable usb port for it if [hwctl] is used),
-as well as common [fping]/[curl] tools and python [unidecode] module for
-unicode-to-ascii filename transliteration, if it's available to import.
+as well as common [fping]/[curl] tools, plus optionally [imagemagick]
+(for cover.bmp auto-rotation) and python [unidecode] module for better
+unicode-to-ascii filename transliteration (if it's available to import).
 
 Makes some assumptions wrt where to put files, set at the top of the script
 and listed in `-h/--help` output.
@@ -132,6 +133,7 @@ and listed in `-h/--help` output.
 [hwctl]: https://github.com/mk-fg/hwctl
 [fping]: https://fping.org/
 [curl]: https://curl.se/
+[imagemagick]: https://imagemagick.org/
 [unidecode]: https://pypi.org/project/Unidecode/
 
 <a name=hdr-wifi-tmp></a>
