@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 import hashlib as hl, pathlib as pl, contextlib as cl, concurrent.futures as cf
-import os, sys, enum, struct, tempfile, time
+import os, sys, enum, struct, tempfile, time, math
 
 import PIL.Image as pil, PIL.ImageEnhance as pile # https://pillow.readthedocs.io/
 try: import numpy as np # https://numpy.org/
@@ -33,11 +33,21 @@ def file_replacement(p):
 			except FileNotFoundError: pass
 
 
-def img_proc(img, bright=None, contrast=None, sharp=None):
-	for factor, wrap in [ (bright, pile.Brightness),
-			(contrast, pile.Contrast), (sharp, pile.Sharpness) ]:
-		if factor in [1.0, None]: continue
-		img = wrap(img).enhance(factor)
+class ImageSizeError(Exception): pass
+
+def img_proc(img, adj):
+	if img.size == (800, 480): # landscape
+		if adj.rot is adj.rot.acw: adj.rot = adj.rot.cw; adj.rot_auto |= 1
+		if adj.rot is adj.rot.cw: img = img.transpose(pil.Transpose.ROTATE_90)
+		elif adj.rot is adj.rot.ccw: img = img.transpose(pil.Transpose.ROTATE_270)
+		else: raise ValueError(adj.rot)
+	else: adj.rot_auto |= 2
+	if adj.rot_auto == 3: raise ImageSizeError( # can be for any img with threads
+		'Mixed-size landscape/portait images - set -r/--rotate or fix manually' )
+	if img.size != (sz := (480, 800)): raise ImageSizeError('Image size {img.size} != {sz}')
+	for k, wrap in dict(br=pile.Brightness, co=pile.Contrast, sh=pile.Sharpness).items():
+		if (k := adj[k]) is None or math.isclose(k, 1.0, rel_tol=0.001): continue
+		img = wrap(img).enhance(k)
 	return img
 
 def img_to_xtg(img, dither=True, pre=None):
@@ -156,7 +166,12 @@ def main(args=None):
 	group.add_argument('-p', '--preview', metavar='file[:n]', help=dd('''
 		Store image after all adjustments and black-and-white/grayscale conversion to a BMP file.
 		First image of the specified ones by default, add :<n> to pick nth one instead (1=first).
+		2 gray shades used in XTCH previews are picked in-between black-dark and dark-light thresholds.
 		Can be used with e.g. zenity + feh to interactively adjust parameters with a preview.'''))
+	group.add_argument('-r', '--rotate', metavar='cw/ccw', choices=('cw', 'ccw'), help=dd('''
+		Rotate any landscape images to portrait in specified direction -
+			clockwise (cw) or counter-clockwise (ccw), skipping any already-portrait images.
+		Default is to auto-rotate clockwise when all specified images are landscape.'''))
 
 	opts = parser.parse_args(sys.argv[1:] if args is None else args)
 
@@ -165,13 +180,14 @@ def main(args=None):
 	except KeyError: parser.error( 'First argument (output) should'
 		' be either a filename/path ending in .xtc/.xtch, or literal xtc/xtch' )
 	title_fmt = lambda p: (opts.title or '').format(p=pl.Path(p))
+	rotate = enum.Enum('Rotate', 'acw cw ccw')[opts.rotate or 'acw']
 
 	pre, grays = adict(n=0, dst=None), tuple(map(int, opts.grays.split(':')))
 	if p := opts.preview: p, _, n = p.partition(':'); pre.update(p=p, n=int(n) if n else 1)
 	img_pre = lambda n: n == pre.n and pre.dst
-	adjs = opts.brightness, opts.contrast, opts.sharpness
-	if opts.percents: adjs = list(v/100 for v in adjs)
-	img_adjust = lambda img: img_proc(img, *adjs)
+	adjs = adict(br=opts.brightness, co=opts.contrast, sh=opts.sharpness)
+	if opts.percents: adjs = adict((k, v and v/100) for k, v in adjs.items())
+	img_adjust = lambda img,_adjs=adjs(rot=rotate, rot_auto=0): img_proc(img, _adjs)
 	img_bmp = { out_fmt.xtc: lambda img,n: img_to_xtg(img, pre=img_pre(n)),
 		out_fmt.xtch: lambda img,n: img_to_xth(img, grays, pre=img_pre(n)) }[out_fmt]
 
