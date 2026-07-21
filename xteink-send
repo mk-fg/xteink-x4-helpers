@@ -1,7 +1,8 @@
 #!/bin/bash
 
-dir_cover=/sleep dir_web=/web dir_books=/books
-dir_notes=/notes dir_images=/images
+declare -A dir=( # not all used as-is
+	[cover]=/sleep [web]=/web [books]=/books
+	[notes]=/notes [images]=/images [fw]=/ )
 wifi='xteink xteink-x4' # wifi-tmp unit/profile
 
 usage() {
@@ -12,6 +13,7 @@ usage() {
 	echo "Usage: $bin <note>.<html/xtc/xtch> ..."
 	echo "Usage: $bin <image>.<jpg/png/bmp> ..."
 	echo "Usage: $bin b[ook] <book>.<fb2/epub> ..."
+	echo "Usage: $bin <firmware>.bin"
 	echo "Usage: $bin p[ing]  # to keep wifi running for longer"
 	[[ $1 -ne 0 ]] || { echo
 		echo "Uploads specified file(s) to a xteink reader device, after enabling wifi"
@@ -20,10 +22,10 @@ usage() {
 		echo "\"$bin ping\" operation is to bump wifi timeout, e.g. when using webui."
 		echo
 		echo "Destination directories used on device:"
-		echo "- cover.bmp file gets uploaded to $dir_cover/cover.bmp as a sleep/power-off image"
-		echo "- by default .fb2/.epub treated as \"web longreads\" to put into $dir_web/<today-date> dirs"
-		echo "- .html/.xtc/.xtch files are stored as notes to $dir_notes, image files go to $dir_images"
-		echo "- explicitly-specified book uploads go to $dir_books"
+		echo "- cover.bmp file gets uploaded to ${dir[cover]}/cover.bmp as a sleep/power-off image"
+		echo "- by default .fb2/.epub treated as \"web longreads\" to put into ${dir[web]}/<today-date> dirs"
+		echo "- .html/.xtc/.xtch files are stored as notes to ${dir[notes]}, image files go to ${dir[images]}"
+		echo "- explicitly-specified book uploads go to ${dir[books]}"
 		echo
 		echo "Uses fping/curl and python \"unidecode\" module (for filename sanitization), and runs"
 		echo " \"sudo wifi-tmp $wifi\" from the same repo to init/keep wifi open (for like 20m)."; }
@@ -35,14 +37,17 @@ set -eo pipefail
 declare -A ext_mts=(
 	[fb2]=application/x-fictionbook+xml [epub]=application/epub+zip
 	[jpg]=image/jpeg [png]=image/png [bmp]=image/bmp
-	[xtc]=application/octet-stream [xtch]=application/octet-stream )
-mt_err='must be .fb2/epub (book/web), .jpg/png/bmp (image) or .bmp (cover)'
+	[xtc]=application/octet-stream [xtch]=application/octet-stream
+	[bin]=application/octet-stream )
+mt_err='must be .fb2/epub (book/web), .jpg/png/bmp (image/cover) or .bin (firmware)'
 if [[ "$1" = p || "$1" = ping ]]; then m=ping
 elif [[ "$1" = b || "$1" = book ]]; then m=book; shift
+elif [[ "${1##*/}" = cover.bmp ]]; then m=cover
 else
 	m="${1##*.}"; m=${m,,}
 	[[ -n "${ext_mts[$m]}" ]] || { echo >&2 "ERROR: File [ $1 ] $mt_err"; exit 1; }
-	if [[ "$m" = xtc || "$m" = xtch ]]; then m=note
+	if [[ "$m" = bin ]]; then m=fw
+		elif [[ "$m" = xtc || "$m" = xtch ]]; then m=note
 		elif [[ "$m" = jpg || "$m" = png || "$m" = bmp ]]; then m=image
 		else m=web; fi
 fi
@@ -53,8 +58,9 @@ fi
 
 if [[ $m = ping ]]; then shift; [[ -z "$1" ]] || usage 1
 
-elif [[ $m != book && "${1##*/}" = cover.bmp ]]; then
-	m=cover; src="$1"; echo "Upload [ $m ] :: $src"
+elif [[ $m = fw ]]; then src="$1"; echo "Upload [ $m ] :: $src"
+elif [[ $m = cover ]]; then
+	src="$1"; echo "Upload [ $m ] :: $src"
 	if ! command -vp magick >/dev/null; then w=480 h=800
 		else read w h < <(magick identify -format '%w %h\n' "$src"); fi
 	if [[ $h = 800 && $w = 480 ]]; then : # all good
@@ -124,28 +130,25 @@ echo --------------------
 ### Upload file(s)
 
 err_exit=0
-tmp_link=/tmp/.xteink.file
+tmp_link=/tmp/.xteink.file # curl has issues with complicated src paths
+name_fixed=
 
-## Cover
-[[ $m != cover ]] || {
-	ln -sf "$(realpath "$src")" "$tmp_link"
-	msg=$( curl -s --fail \
-		-F "file=@$tmp_link;filename=cover.bmp;type=image/bmp" \
-		http://$addr/upload?path="$dir_cover" ) || err_exit=$?
-	echo "$msg"; }
-
-## Other stuff - to /web/<date>, /images, /notes, /books and such
 if [[ $m = web ]]; then
 	dt=$(printf '%(%Y-%m-%d)T' -1)
-	curl -s -F name=$dt -F path="$dir_web" http://$addr/mkdir &>/dev/null
-	dst="$dir_web"/$dt
-elif [[ $m = note ]]; then dst=$dir_notes
-elif [[ $m = image ]]; then dst=$dir_images
-elif [[ $m = book ]]; then dst=$dir_books
-else declare -A src=(); fi # skips next loop
+	curl -s -F name=$dt -F path="${dir[web]}" http://$addr/mkdir &>/dev/null
+	dst="${dir[web]}"/$dt
+else
+	dst=${dir[$m]}
+	if [[ $m = fw ]]; then name_fixed=firmware.bin
+	elif [[ $m = cover ]]; then name_fixed=cover.bmp; fi
+	[[ -z "$name_fixed" || "${#src[@]}" -eq 1 ]] || {
+		echo >&2 "ERROR: Multiple $name_fixed [ $m ] files: ${src[@]}"; exit 1; }
+fi
+
 for name in "${!src[@]}"; do
 	mt=${name##*.}; mt=${mt,,}; mt=${ext_mts[$mt]}
 	p="${src[$name]}"; ln -sf "$(realpath "$p")" "$tmp_link"
+	[[ -z "$name_fixed" ]] || name=$name_fixed
 	msg=$( curl -s --fail \
 		-F "file=@$tmp_link;filename=$name;type=$mt" \
 		http://$addr/upload?path=$dst 2>&1 ) && err= || err=$?
