@@ -201,7 +201,8 @@ def main(args=None):
 			img_load, p, n ), p=pl.Path(p), n=n) for n, p in enumerate(opts.src_images, 1))
 		for task in cf.as_completed(tasks):
 			try: img = task.result(); imgs.append((task.n, task.p, img))
-			except Exception as err: err.add_note(f' Failed loading image: {task.p}'); raise
+			except Exception as err:
+				err.add_note(f' Failed loading image #{task.n}: {task.p}'); raise
 		imgs = dict((p, img) for n, p, img in sorted(imgs))
 
 		# Generate output file(s)
