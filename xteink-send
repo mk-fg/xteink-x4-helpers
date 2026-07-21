@@ -129,9 +129,8 @@ echo --------------------
 
 ### Upload file(s)
 
-err_exit=0
+err_exit=0 name_fixed=
 tmp_link=/tmp/.xteink.file # curl has issues with complicated src paths
-name_fixed=
 
 if [[ $m = web ]]; then
 	dt=$(printf '%(%Y-%m-%d)T' -1)
@@ -153,7 +152,7 @@ for name in "${!src[@]}"; do
 		-F "file=@$tmp_link;filename=$name;type=$mt" \
 		http://$addr/upload?path=$dst 2>&1 ) && err= || err=$?
 	[[ -z "$err" ]] && echo "-- DONE :: $msg" \
-		|| { echo >&2 "-- ERROR :: Failed to upload file [ $p ]: $msg"; err_exit=$?; }
+		|| { echo >&2 "-- ERROR :: Failed to upload file [ $p ]: $msg"; err_exit=$err; }
 done
 
 [[ ! -h "$tmp_link" ]] || rm -f "$tmp_link"

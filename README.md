@@ -222,8 +222,10 @@ should be easy to tweak in that script itself.
 # Links
 
 - [Xteink X4] - device product, also widely available on aliexpress and wherever.
+- [FreeInk] - ecosystem/docs about these cheap readers, and how to DIY-make one.
 - [Papyrix firmware] - fw that I use, initially picked for fb2 format support.
 - [cbz2xtc] - CLI tool for converting .cbz image archives into .xtc/.xtch files for this device.
-- [cr2xt] - GUI tool to render common text/book files to .xtc/.xtch bitmap xteink formats.
+- [cr2xt] - GUI tool to render common text/book files to .xtc/.xtch xteink bitmap formats.
 
+[FreeInk]: https://freeink.org/
 [cr2xt]: https://github.com/CrazyCoder/cr2xt
