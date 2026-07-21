@@ -197,11 +197,12 @@ def main(args=None):
 		# Load all images - PIL should release GIL, so can be faster in threads
 		if pre.n: pre.dst = ctx.enter_context(file_replacement(pre.p))
 		img_load = lambda p, n: img_bmp(img_adjust(ctx.enter_context(pil.open(p))), n)
-		imgs, tasks = dict(), list(attrs(exe.submit(
-			img_load, p, n ), p=pl.Path(p)) for n, p in enumerate(opts.src_images, 1))
+		imgs, tasks = list(), list(attrs(exe.submit(
+			img_load, p, n ), p=pl.Path(p), n=n) for n, p in enumerate(opts.src_images, 1))
 		for task in cf.as_completed(tasks):
-			try: img = task.result(); imgs[task.p] = img
+			try: img = task.result(); imgs.append((task.n, task.p, img))
 			except Exception as err: err.add_note(f' Failed loading image: {task.p}'); raise
+		imgs = dict((p, img) for n, p, img in sorted(imgs))
 
 		# Generate output file(s)
 		out_files, out_file = list(), lambda p: \
