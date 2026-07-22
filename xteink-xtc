@@ -89,9 +89,8 @@ def img_to_xth(img, grays=(42, 127, 212), pre=None):
 	if pre:
 		mid = lambda c1, c2: c1 + round((c2 - c1) / 2)
 		c_dark, c_light = mid(black, dark), mid(dark, light)
-		img = img.point(list(( 0 if c < black else c_dark
-			if c < dark else c_light if c < light else 255 ) for c in range(256)))
-		img.save(pre, 'bmp')
+		img.point(list(( 0 if c < black else c_dark if c < dark
+			else c_light if c < light else 255 ) for c in range(256))).save(pre, 'bmp')
 	return struct.pack( '<4sHHBBI8s', b'XTH\x00', *sz,
 		color_mode := 0, compression := 0, len(data), hl.md5(data).digest()[:8] ) + data
 

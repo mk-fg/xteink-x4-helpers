@@ -15,8 +15,6 @@ Table of Contents:
 
 - [Intended use-cases here](#hdr-intended_use-cases_here)
 
-- [Firmware patches](#hdr-firmware_patches)
-
 - [Tools](#hdr-tools)
 
     - [xteink-send](#hdr-xteink-send)
@@ -43,7 +41,7 @@ With its "standing image" eink screen, for me it's a great device for a few task
   with zero button-fiddling - always just there on screen like it's a piece of paper.
 
 - Send QR or barcode image to the device, to go pickup order or parcel which is
-  handed out quickly via such codes - similar to putting a note as a cover screen,
+  handed out quickly via such codes - similar to putting a note as a sleep screen,
   but for "need to present this code/image somewhere" purpose.
 
 - Have a bunch of common notes, lists, references, maps, recipes, etc to carry
@@ -75,31 +73,6 @@ Thought to make one repository for those, as there seem to be an increasing numb
 [SingleFile]: https://www.getsinglefile.com/
 
 
-<a name=hdr-firmware_patches></a>
-# Firmware patches
-
-I use [Papyrix firmware] at the moment, and [papyrix-reader-patches] dir has
-usually non-upstreamable tweaks to make stuff I use device for more convenient,
-often by removing/disabling something else that I don't need.
-
-Each patch there should have a header at the top, describing what it does,
-but they tend to be trivial enough to just read.
-
-Can be applied via usual `patch -tNp1 < papyrix-reader-patches/...` command.\
-Often useful to do `--dry-run` first to check whether they still apply to latest upstream.
-
-`firmware.bin` file needs to be rebuilt and uploaded afterwards, as per upstream
-instructions, but the gist there is to run `make build` to produce
-`.pio/build/default/firmware.bin` and run something like `./papyrix-flasher flash ...`
-with device powered-on and USB-connected. Change-rebuilds are fast after initial one.
-
-Plenty of abstractions in that firmware code often look redundant and more complicated
-than the thing they do at the end, which might just be an artifact of vibe-coding.
-
-[Papyrix firmware]: https://github.com/bigbag/papyrix-reader/
-[papyrix-reader-patches]: papyrix-reader-patches
-
-
 <a name=hdr-tools></a>
 # Tools
 
@@ -122,7 +95,7 @@ Basically one run-and-done tool for easy file uploads from the command line.
 Under the hood uses [wifi-tmp script] (found next to this one) via sudo
 to keep wifi link running (and enable usb port for it if [hwctl] is used),
 as well as common [fping]/[curl] tools, plus optionally [imagemagick]
-(for cover.bmp auto-rotation) and python [unidecode] module for better
+(for sleep.bmp auto-rotation) and python [unidecode] module for better
 unicode-to-ascii filename transliteration (if it's available to import).
 
 Makes some assumptions wrt where to put files, set at the top of the script
@@ -147,14 +120,17 @@ Running with `-h/--help` should list profiles from hardcoded wifi-tmp.profiles
 file for [wpa_supplicant], and a couple other parameters, like interface name and
 usb port that enables it (if [hwctl] is used), set at the top of the script.
 
-WiFi-profile line for `/etc/wpa_supplicant/wifi-tmp.profiles` to connect
-to AP that [Papyrix firmware] creates - `xteink-x4 :: 192.168.4.2/24 20m
-ssid="Papyrix" key_mgmt=NONE` (as used in xteink-send).
-Papyrix AP is unsecured like that, but then also has quite a short range,
-so probably shouldn't be a problem in practice, but otherwise temp-hostapd +
-stored connection parameters can be used instead - more PITA to make it work
-(entering pw via left-right buttons), and passwordless AP is easier to access
-from other devices (e.g. any laptop or phone when not on home WiFi network).
+WiFi-profile lines in `/etc/wpa_supplicant/wifi-tmp.profiles` file to connect
+to AP that couple different firmwares create:
+
+    xx4-papyrix :: 192.168.4.2/24 20m ssid="Papyrix" key_mgmt=NONE
+    xx4-inx :: 192.168.4.2/24 20m ssid="Xteink-X4" key_mgmt=NONE
+
+APs created by firmware tend to be unsecured like that, but then also has quite
+a short range, so probably shouldn't be a problem in practice, but otherwise
+temp-hostapd + stored connection parameters can be used instead - more PITA to
+make it work (entering pw via left-right buttons), and passwordless AP is easier
+to access from other devices (e.g. any laptop or phone when not on home WiFi network).
 
 [wifi-tmp]: wifi-tmp
 [wpa_supplicant]: https://w1.fi/wpa_supplicant/
@@ -185,7 +161,7 @@ sliders and immediate/dynamic result preview.
 XTCH format produced by the script is same as in [cbz2xtc] tool, with
 black-dark-light-white color ordering, that seem to be incorrect according to
 [CrazyCoder's gist] with format descrption (also linked above, where order is
-black-light-dark-white), but this order seem to be implemented in [Papyrix firmware],
+black-light-dark-white), but this order seem to be implemented in papyrix/inx fw,
 so script uses that, instead of (more difficult) patching of bit order there.
 Don't know which of the two orders is supported by other firmwares, didn't check.
 
@@ -221,11 +197,31 @@ should be easy to tweak in that script itself.
 <a name=hdr-links></a>
 # Links
 
+General:
+
 - [Xteink X4] - device product, also widely available on aliexpress and wherever.
 - [FreeInk] - ecosystem/docs about these cheap readers, and how to DIY-make one.
-- [Papyrix firmware] - fw that I use, initially picked for fb2 format support.
+
+[FreeInk]: https://freeink.org/
+
+Firmwares - only couple ones I've used, there're many more of them around:
+
+- [Inx] - currently using this one. Fast, stable, has nice UI.
+
+- [Papyrix] - initially picked for fb2 format support. Janky, vibe-coded.
+
+    Has nice [papyrix-flasher] command-line firmware updater tool,
+    which works for other crosspoint-base firmwares as well (e.g. Inx above).
+
+[Inx]: https://github.com/obijuankenobiii/inx
+[Papyrix]: https://github.com/bigbag/papyrix-reader/
+[papyrix-flasher]: https://github.com/bigbag/papyrix-flasher/
+
+File format converter tools:
+
+- [epubkit.ink] - online epub converter/optimizer tool.
 - [cbz2xtc] - CLI tool for converting .cbz image archives into .xtc/.xtch files for this device.
 - [cr2xt] - GUI tool to render common text/book files to .xtc/.xtch xteink bitmap formats.
 
-[FreeInk]: https://freeink.org/
+[epubkit.ink]: https://epubkit.ink/
 [cr2xt]: https://github.com/CrazyCoder/cr2xt

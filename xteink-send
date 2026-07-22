@@ -1,14 +1,14 @@
 #!/bin/bash
 
 declare -A dir=( # not all used as-is
-	[cover]=/sleep [web]=/web [books]=/books
-	[notes]=/notes [images]=/images [fw]=/ )
-wifi='xteink xteink-x4' # wifi-tmp unit/profile
+	[sleep]=/sleep [web]=/web [book]=/books
+	[note]=/notes [image]=/images [fw]=/ )
+wifi='xx4 xx4-current' # wifi-tmp unit/profile
 
 usage() {
 	local bin=${0##*/}
 	[[ $1 -eq 0 ]] || exec 1>&2
-	echo "Usage: $bin cover.bmp"
+	echo "Usage: $bin { sleep.bmp | cover.bmp }"
 	echo "Usage: $bin <web-longread>.<fb2/epub> ..."
 	echo "Usage: $bin <note>.<html/xtc/xtch> ..."
 	echo "Usage: $bin <image>.<jpg/png/bmp> ..."
@@ -22,10 +22,10 @@ usage() {
 		echo "\"$bin ping\" operation is to bump wifi timeout, e.g. when using webui."
 		echo
 		echo "Destination directories used on device:"
-		echo "- cover.bmp file gets uploaded to ${dir[cover]}/cover.bmp as a sleep/power-off image"
+		echo "- sleep/cover.bmp file gets uploaded to ${dir[sleep]}/sleep.bmp as a sleep/power-off image"
 		echo "- by default .fb2/.epub treated as \"web longreads\" to put into ${dir[web]}/<today-date> dirs"
-		echo "- .html/.xtc/.xtch files are stored as notes to ${dir[notes]}, image files go to ${dir[images]}"
-		echo "- explicitly-specified book uploads go to ${dir[books]}"
+		echo "- .html/.xtc/.xtch files are stored as notes to ${dir[note]}, image files go to ${dir[image]}"
+		echo "- explicitly-specified book uploads go to ${dir[book]}"
 		echo
 		echo "Uses fping/curl and python \"unidecode\" module (for filename sanitization), and runs"
 		echo " \"sudo wifi-tmp $wifi\" from the same repo to init/keep wifi open (for like 20m)."; }
@@ -39,10 +39,10 @@ declare -A ext_mts=(
 	[jpg]=image/jpeg [png]=image/png [bmp]=image/bmp
 	[xtc]=application/octet-stream [xtch]=application/octet-stream
 	[bin]=application/octet-stream )
-mt_err='must be .fb2/epub (book/web), .jpg/png/bmp (image/cover) or .bin (firmware)'
+mt_err='must be .fb2/epub (book/web), .jpg/png/bmp (image/sleep) or .bin (firmware)'
 if [[ "$1" = p || "$1" = ping ]]; then m=ping
 elif [[ "$1" = b || "$1" = book ]]; then m=book; shift
-elif [[ "${1##*/}" = cover.bmp ]]; then m=cover
+elif [[ "${1##*/}" = sleep.bmp || "${1##*/}" = cover.bmp ]]; then m=sleep
 else
 	m="${1##*.}"; m=${m,,}
 	[[ -n "${ext_mts[$m]}" ]] || { echo >&2 "ERROR: File [ $1 ] $mt_err"; exit 1; }
@@ -59,7 +59,7 @@ fi
 if [[ $m = ping ]]; then shift; [[ -z "$1" ]] || usage 1
 
 elif [[ $m = fw ]]; then src="$1"; echo "Upload [ $m ] :: $src"
-elif [[ $m = cover ]]; then
+elif [[ $m = sleep ]]; then
 	src="$1"; echo "Upload [ $m ] :: $src"
 	if ! command -vp magick >/dev/null; then w=480 h=800
 		else read w h < <(magick identify -format '%w %h\n' "$src"); fi
@@ -104,8 +104,8 @@ for p in sys.argv[1:]:
 	if not os.access(p, os.R_OK):
 		print(f'ERROR: File missing/inaccessible :: {p}', file=sys.stderr); continue
 	name = os.path.basename(p)
-	name = ( unidecode(name) if unidecode
-		else unicodedata.normalize('NFKD', p).encode('ascii', 'ignore') )
+	name = ( unidecode(name) if unidecode else
+		unicodedata.normalize('NFKD', name).encode('ascii', 'ignore').decode() )
 	print(p); print(name_for_fs(name))
 EOF
 ); fi
@@ -139,7 +139,7 @@ if [[ $m = web ]]; then
 else
 	dst=${dir[$m]}
 	if [[ $m = fw ]]; then name_fixed=firmware.bin
-	elif [[ $m = cover ]]; then name_fixed=cover.bmp; fi
+	elif [[ $m = sleep ]]; then name_fixed=sleep.bmp; fi
 	[[ -z "$name_fixed" || "${#src[@]}" -eq 1 ]] || {
 		echo >&2 "ERROR: Multiple $name_fixed [ $m ] files: ${src[@]}"; exit 1; }
 fi
