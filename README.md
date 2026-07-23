@@ -197,12 +197,14 @@ should be easy to tweak in that script itself.
 <a name=hdr-links></a>
 # Links
 
-General:
+Misc / general links:
 
 - [Xteink X4] - device product, also widely available on aliexpress and wherever.
 - [FreeInk] - ecosystem/docs about these cheap readers, and how to DIY-make one.
+- [xteinkom.lowio.xyz] - large sleep-screen gallery, apparently synced from official app.
 
 [FreeInk]: https://freeink.org/
+[xteinkom.lowio.xyz]: https://xteinkom.lowio.xyz/
 
 Firmwares - only couple ones I've used, there're many more of them around:
 
@@ -222,6 +224,8 @@ File format converter tools:
 - [epubkit.ink] - online epub converter/optimizer tool.
 - [cbz2xtc] - CLI tool for converting .cbz image archives into .xtc/.xtch files for this device.
 - [cr2xt] - GUI tool to render common text/book files to .xtc/.xtch xteink bitmap formats.
+- [x4later.lowio.xyz] - WebUI to convert/upload webpage links to device. Haven't tried, but a good idea.
 
 [epubkit.ink]: https://epubkit.ink/
 [cr2xt]: https://github.com/CrazyCoder/cr2xt
+[x4later.lowio.xyz]: https://x4later.lowio.xyz/
