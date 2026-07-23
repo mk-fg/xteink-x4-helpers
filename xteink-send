@@ -3,7 +3,7 @@
 declare -A dir=( # not all used as-is
 	[sleep]=/sleep [web]=/web [book]=/books
 	[note]=/notes [image]=/images [fw]=/ )
-wifi='xx4 xx4-current' # wifi-tmp unit/profile
+wifi_instance=xx4 wifi_profile=xx4-current
 
 usage() {
 	local bin=${0##*/}
@@ -114,12 +114,12 @@ echo --------------------
 
 ### Run WiFi connection
 
-addr=192.168.4.1 log=/tmp/.wifi-tmp.xteink.log
+addr=192.168.4.1 log=/tmp/.wifi-tmp."$wifi_instance".log
 touch $log && chown $USER: $log && chmod 600 $log # to access what wifi-tmp writes
 exec > >(cat) 2>&1 # to fix something below (tail?) from messing-up terminal
 tail -F $log & tail_pid=$!
 trap '[[ -z "$tail_pid" ]] || kill $tail_pid' EXIT
-sudo -n -- wifi-tmp $wifi
+sudo -n -- wifi-tmp "$wifi_instance" "$wifi_profile"
 ack=; fping -q -B1.2 -t100 -r5 "$addr" && ack=t || {
 	sleep 2 && fping -q -B1.2 -t100 -r11 "$addr" && ack=t; }
 [[ -n "$ack" ]] || { echo >&2 "ERROR: Failed to connect to Papyrix AP"; exit 1; }
