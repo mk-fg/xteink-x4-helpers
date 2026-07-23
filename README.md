@@ -79,23 +79,27 @@ Thought to make one repository for those, as there seem to be an increasing numb
 # Firmware patches
 
 I use [Inx firmware] at the moment, and [inx-patches] dir has usually
-non-upstreamable tweaks to make thing I care about more convenient,
-often by removing/disabling something else that I don't need.
+non-upstreamable tweaks to make things I care about more convenient,
+often by removing/disabling something else I don't need.
 
 Each patch there should have a header at the top, describing what it does,
-but they tend to be trivial enough to just read as well.
-
+but they tend to be trivial enough to just read as well.\
 Can be applied via usual `patch -tNp1 < inx-patches/...` command.\
 Often useful to do `--dry-run` first to check whether they still apply to latest upstream.
 
-`firmware.bin` file needs to be rebuilt and uploaded afterwards, as per upstream
-instructions, but the gist there is to do `pio run` to produce
-`.pio/build/default/firmware.bin`, send that .bin over wifi via [xteink-send],
-and run update process through "Actions" in the settings menu.
-Rebuilds after any extra patches/changes are fast after initial first build.
+`firmware.bin` file needs to be rebuilt and uploaded/flashed afterwards,
+as per upstream instructions, but the gist there is to do `pio run` to produce
+`.pio/build/default/firmware.bin`, send that .bin over wifi (e.g. via [xteink-send]),
+and run update process through "Actions" in the settings menu.\
+Alternative is to use USB-C link with [fw-updater WebUI] or CLI [esptool] / [papyrix-flasher] tools.\
+Or worst-case can also [put fw file for bootloader to pickup onto SD card].\
+Rebuilds after any extra patches/changes are fast after that initial first build.
 
 [Inx firmware]: https://github.com/obijuankenobiii/inx
 [inx-patches]: inx-patches
+[fw-updater WebUI]: https://xteink.dve.al/
+[esptool]: https://github.com/crosspoint-reader/crosspoint-reader#command-line
+[put fw file for bootloader to pickup onto SD card]: https://crosspointreader.com/unlock
 
 
 <a name=hdr-tools></a>
