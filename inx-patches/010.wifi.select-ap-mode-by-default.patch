@@ -1,0 +1,16 @@
+Select hotspot mode by default, as it's the only one I use atm.
+With other patch disabling stats tab, this enables wifi via "Left > Open" buttons.
+
+diff --git a/src/activity/page/SyncActivity.cpp b/src/activity/page/SyncActivity.cpp
+index 9a54ad5..0b85158 100644
+--- a/src/activity/page/SyncActivity.cpp
++++ b/src/activity/page/SyncActivity.cpp
+@@ -25,7 +25,7 @@ constexpr int LIST_ITEM_HEIGHT = UiTheme::DRAWER_LIST_ITEM_HEIGHT;
+ void SyncActivity::onEnter() {
+   Activity::onEnter();
+ 
+-  selectedIndex = 0;
++  selectedIndex = 2;
+ 
+   render();
+   SETTINGS.runHalfRefreshOnLoadIfEnabled(renderer, SystemSetting::RefreshOnLoadPage::Sync);

@@ -15,6 +15,8 @@ Table of Contents:
 
 - [Intended use-cases here](#hdr-intended_use-cases_here)
 
+- [Firmware patches](#hdr-firmware_patches)
+
 - [Tools](#hdr-tools)
 
     - [xteink-send](#hdr-xteink-send)
@@ -71,6 +73,29 @@ Patches/tools/stuff here is to aid/help or enable all these use-cases in some wa
 Thought to make one repository for those, as there seem to be an increasing number of them.
 
 [SingleFile]: https://www.getsinglefile.com/
+
+
+<a name=hdr-firmware_patches></a>
+# Firmware patches
+
+I use [Inx firmware] at the moment, and [inx-patches] dir has usually
+non-upstreamable tweaks to make thing I care about more convenient,
+often by removing/disabling something else that I don't need.
+
+Each patch there should have a header at the top, describing what it does,
+but they tend to be trivial enough to just read as well.
+
+Can be applied via usual `patch -tNp1 < inx-patches/...` command.\
+Often useful to do `--dry-run` first to check whether they still apply to latest upstream.
+
+`firmware.bin` file needs to be rebuilt and uploaded afterwards, as per upstream
+instructions, but the gist there is to do `pio run` to produce
+`.pio/build/default/firmware.bin`, send that .bin over wifi via [xteink-send],
+and run update process through "Actions" in the settings menu.
+Rebuilds after any extra patches/changes are fast after initial first build.
+
+[Inx firmware]: https://github.com/obijuankenobiii/inx
+[inx-patches]: inx-patches
 
 
 <a name=hdr-tools></a>

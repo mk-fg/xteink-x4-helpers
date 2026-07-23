@@ -1,0 +1,52 @@
+Hide and skip over "statistics" tab entirely, as I don't see any value in it,
+don't like quantifying/gamifying leisure activities, and it's one less button
+to enable wifi for qick notes/webpage uploads.
+See other patches for selecting right mode there too, so that it's just "Left > Open".
+
+diff --git a/src/main.cpp b/src/main.cpp
+index 0edbc26..92076ab 100644
+--- a/src/main.cpp
++++ b/src/main.cpp
+@@ -136,7 +136,8 @@ void onGoToStatistics() { switchTo<StatisticActivity>(render, input, onGoToRecen
+  * @brief Navigates to the recent books activity.
+  */
+ void onGoToRecent() {
+-  switchTo<RecentActivity>(render, input, []() { onGoToLibrary("/"); }, onGoToStatistics, onSelectBook, onGoToRecent);
++  // switchTo<RecentActivity>(render, input, []() { onGoToLibrary("/"); }, onGoToStatistics, onSelectBook, onGoToRecent);
++  switchTo<RecentActivity>(render, input, []() { onGoToLibrary("/"); }, onGoToFileTransfer, onSelectBook, onGoToRecent);
+ }
+ 
+ /**
+@@ -163,7 +164,8 @@ void onNetworkModeSelected(NetworkMode mode) {
+  * @brief Navigates to the file transfer/sync activity.
+  */
+ void onGoToFileTransfer() {
+-  switchTo<SyncActivity>(render, input, onNetworkModeSelected, onGoToRecent, onGoToStatistics, onGoToSettings);
++  // switchTo<SyncActivity>(render, input, onNetworkModeSelected, onGoToRecent, onGoToStatistics, onGoToSettings);
++  switchTo<SyncActivity>(render, input, onNetworkModeSelected, onGoToRecent, onGoToRecent, onGoToSettings);
+ }
+ 
+ /**
+@@ -171,7 +173,8 @@ void onGoToFileTransfer() {
+  */
+ void onGoToSettings() {
+   switchTo<SettingsActivity>(
+-      render, input, onGoToRecent, []() { onGoToLibrary("/"); }, onGoToFileTransfer, onGoToStatistics);
++      // render, input, onGoToRecent, []() { onGoToLibrary("/"); }, onGoToFileTransfer, onGoToStatistics);
++      render, input, onGoToRecent, []() { onGoToLibrary("/"); }, onGoToFileTransfer, onGoToRecent);
+ }
+ 
+ /**
+diff --git a/src/system/UiTheme.cpp b/src/system/UiTheme.cpp
+index f4b36a7..0f8b86e 100644
+--- a/src/system/UiTheme.cpp
++++ b/src/system/UiTheme.cpp
+@@ -81,7 +81,7 @@ void UiTheme::drawMainTabBar(const GfxRenderer& renderer, const int selectedInde
+         drawTabIcon(Sync);
+         break;
+       case 4:
+-        drawTabIcon(Stats);
++        // drawTabIcon(Stats);
+         break;
+     }
+ 
