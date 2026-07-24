@@ -248,13 +248,13 @@ Firmwares - only couple ones I've used, there're many more of them around:
 [Papyrix]: https://github.com/bigbag/papyrix-reader/
 [papyrix-flasher]: https://github.com/bigbag/papyrix-flasher/
 
-File format converter tools:
+File format conversion tools:
 
-- [epubkit.ink] - online epub converter/optimizer tool.
 - [cbz2xtc] - CLI tool for converting .cbz image archives into .xtc/.xtch files for this device.
 - [cr2xt] - GUI tool to render common text/book files to .xtc/.xtch xteink bitmap formats.
-- [x4later.lowio.xyz] - WebUI to convert/upload webpage links to device. Haven't tried, but a good idea.
+- [dotepub.com], [epubkit.ink], [x4later.lowio.xyz] - online webpage/epub converter/optimizer tools.
 
+[dotepub.com]: https:///dotepub.com
 [epubkit.ink]: https://epubkit.ink/
 [cr2xt]: https://github.com/CrazyCoder/cr2xt
 [x4later.lowio.xyz]: https://x4later.lowio.xyz/
