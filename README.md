@@ -239,7 +239,7 @@ Firmwares - only couple ones I've used, there're many more of them around:
 
 - [Inx] - currently using this one. Fast, stable, has nice UI.
 
-- [Papyrix] - initially picked for fb2 format support. Janky, vibe-coded.
+- [Papyrix] - initially picked for fb2 format support. Janky, badly vibe-coded.
 
     Has nice [papyrix-flasher] command-line firmware updater tool,
     which works for other crosspoint-base firmwares as well (e.g. Inx above).
