@@ -45,11 +45,11 @@ index cba0671..d9b80db 100644
 +      if (line.empty()) {
 +        if (emptyLinePool == 0) {
 +          emptyLinePool = emptyLinesPerTextLine;
-+          outLinesLimit -= 1;
++          outLinesLimit--;
 +        }
 +        outLines.push_back(line);
-+        outLinesLimit += 1;
-+        emptyLinePool -= 1;
++        outLinesLimit++;
++        emptyLinePool--;
 +        break;
 +      }
 +
