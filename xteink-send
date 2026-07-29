@@ -2,7 +2,7 @@
 
 declare -A dir=( # not all used as-is
 	[sleep]=/sleep [web]=/web [book]=/books
-	[note]=/notes [image]=/images [fw]=/ )
+	[note]=/notes [image]=/sleep [fw]=/ )
 wifi_instance=xx4 wifi_profile=xx4-current
 
 usage() {
@@ -22,9 +22,9 @@ usage() {
 		echo "\"$bin ping\" operation is to bump wifi timeout, e.g. when using webui."
 		echo
 		echo "Destination directories used on device:"
-		echo "- sleep/cover.bmp file gets uploaded to ${dir[sleep]}/sleep.bmp as a sleep/power-off image"
+		echo "- *.bmp file gets uploaded to ${dir[sleep]}/sleep.bmp as a sleep/power-off image"
 		echo "- by default .fb2/.epub treated as \"web longreads\" to put into ${dir[web]}/<today-date> dirs"
-		echo "- .html/.xtc/.xtch files are stored as notes to ${dir[note]}, image files go to ${dir[image]}"
+		echo "- .html/.xtc/.xtch files are stored as notes to ${dir[note]}, other images go to ${dir[image]}"
 		echo "- explicitly-specified book uploads go to ${dir[book]}"
 		echo
 		echo "Uses fping/curl and python \"unidecode\" module (for filename sanitization), and runs"
