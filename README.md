@@ -21,6 +21,7 @@ Table of Contents:
 
     - [xteink-send](#hdr-xteink-send)
     - [wifi-tmp](#hdr-wifi-tmp)
+    - [xteink-html2epub](#hdr-xteink-html2epub)
     - [xteink-xtc](#hdr-xteink-xtc)
     - [xteink-xtc-feh](#hdr-xteink-xtc-feh)
 
@@ -163,6 +164,43 @@ to access from other devices (e.g. any laptop or phone when not on home WiFi net
 
 [wifi-tmp]: wifi-tmp
 [wpa_supplicant]: https://w1.fi/wpa_supplicant/
+
+<a name=hdr-xteink-html2epub></a>
+## [xteink-html2epub]
+
+Script to convert any stored [reader-mode]-friendly webpage/[HTML file]
+(one that has bunch of text) to a simple all-text-in-one-chapter [EPUB file]
+(basically same HTML in [.zip archive]), discarding anything else that might
+negatively impact readability on eReader firmwares.
+
+Uses/requires [rdrview] tool to find/extract and simplify text from HTML,
+and [python lxml module] to further process resulting HTML text-body to fix various
+issues with HtmlSlimParser used by CrossPoint firmware forks on Xteink devices.
+
+Intended to be used with [SingleFile]-saved pages, to make those readable as
+epub files, without cover images, splitting them into useless chapters (that tend
+to add a lot of whitespace, noise and page-flipping, mess up progress tracking, etc),
+pointless CSS styles (making text unreadable via margins, colors and such),
+or any other complicated markup making reader app crash, hang or otherwise broken
+for roughly half of "properly" converted HTMLs (using e.g. [Calibre]).\
+Single web page isn't a book, and Xteink devices don't parse HTML correctly,
+so more faithful conversion process is, the worse result tends to get for these.
+
+Currently roughly same effect can be acheived by chaining [rdrview] and
+`pandoc -t plain ...` ([pandoc] document converter) tools, except epub file
+is compressed, preserves title, some basic header/bold/italic styling in text,
+and can potentially keep images as well in the future (might add handling for these).
+
+[xteink-html2epub]: xteink-html2epub
+[reader-mode]:
+  https://lifehacker.com/how-to-use-your-browsers-reader-mode-to-actually-read-w-1847480062
+[HTML file]: https://en.wikipedia.org/wiki/HTML
+[EPUB file]: https://en.wikipedia.org/wiki/EPUB
+[.zip archive]: https://en.wikipedia.org/wiki/ZIP_(file_format)
+[rdrview]: https://github.com/eafer/rdrview
+[python lxml module]: https://lxml.de
+[Calibre]: https://calibre-ebook.com/
+[pandoc]: https://pandoc.org/
 
 <a name=hdr-xteink-xtc></a>
 ## [xteink-xtc]
