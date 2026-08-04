@@ -19,11 +19,11 @@ Table of Contents:
 
 - [Tools](#hdr-tools)
 
-    - [xteink-send](#hdr-xteink-send)
-    - [wifi-tmp](#hdr-wifi-tmp)
     - [xteink-html2epub](#hdr-xteink-html2epub)
     - [xteink-xtc](#hdr-xteink-xtc)
     - [xteink-xtc-feh](#hdr-xteink-xtc-feh)
+    - [xteink-send](#hdr-xteink-send)
+    - [wifi-tmp](#hdr-wifi-tmp)
 
 - [Links](#hdr-links)
 
@@ -109,61 +109,6 @@ Rebuilds after any extra patches/changes are fast after that initial first build
 Helper scripts for terminal-centered workflow, as I tend to use zsh command-line
 there as a primary/origin interface for everything - to convert formats and
 simplify any routine file management operations.
-
-<a name=hdr-xteink-send></a>
-## [xteink-send]
-
-File transfer tool, to run as `xteink-send web-longread.fb2`, which then does
-everything else needed for keeping wifi connection (auto-closing it after 20min of
-idleness), waiting for it to establish (if not open already), mkdir `/web/<date>`,
-check/process image file(s), and run curl to upload file there, with filename sanitization
-(stripping characters that firmware doesn't support, like `:`, `?`, `*`, unicode, etc),
-handling request endpoint/encoding/hacks and per-file success/error checking/reporting.
-
-Basically one run-and-done tool for easy file uploads from the command line.
-
-Under the hood uses [wifi-tmp script] (found next to this one) via sudo
-to keep wifi link running (and enable usb port for it if [hwctl] is used),
-as well as common [fping]/[curl] tools, plus optionally [imagemagick]
-(for sleep.bmp auto-rotation) and python [unidecode] module for better
-unicode-to-ascii filename transliteration (if it's available to import).
-
-Makes some assumptions wrt where to put files, set at the top of the script
-and listed in `-h/--help` output.
-
-[xteink-send]: xteink-send
-[wifi-tmp script]: wifi-tmp
-[hwctl]: https://github.com/mk-fg/hwctl
-[fping]: https://fping.org/
-[curl]: https://curl.se/
-[imagemagick]: https://imagemagick.org/
-[unidecode]: https://pypi.org/project/Unidecode/
-
-<a name=hdr-wifi-tmp></a>
-## [wifi-tmp]
-
-Root script to run via sudo exception, to enable and keep wifi running
-in a reasonably safe manner, until preset inactivity timeout expires,
-used by/for [xteink-send] script above.
-
-Running with `-h/--help` should list profiles from hardcoded wifi-tmp.profiles
-file for [wpa_supplicant], and a couple other parameters, like interface name and
-usb port that enables it (if [hwctl] is used), set at the top of the script.
-
-WiFi-profile lines in `/etc/wpa_supplicant/wifi-tmp.profiles` file to connect
-to AP that couple different firmwares create:
-
-    xx4-papyrix :: 192.168.4.2/24 20m ssid="Papyrix" key_mgmt=NONE
-    xx4-inx :: 192.168.4.2/24 20m ssid="Xteink-X4" key_mgmt=NONE
-
-APs created by firmware tend to be unsecured like that, but then also has quite
-a short range, so probably shouldn't be a problem in practice, but otherwise
-temp-hostapd + stored connection parameters can be used instead - more PITA to
-make it work (entering pw via left-right buttons), and passwordless AP is easier
-to access from other devices (e.g. any laptop or phone when not on home WiFi network).
-
-[wifi-tmp]: wifi-tmp
-[wpa_supplicant]: https://w1.fi/wpa_supplicant/
 
 <a name=hdr-xteink-html2epub></a>
 ## [xteink-html2epub]
@@ -259,6 +204,61 @@ should be easy to tweak in that script itself.
 [feh image viewer]: https://feh.finalrewind.org/
 [fdlinecombine]: https://github.com/vi/fdlinecombine
 [feh]: https://feh.finalrewind.org/
+
+<a name=hdr-xteink-send></a>
+## [xteink-send]
+
+File transfer tool, to run as `xteink-send web-longread.fb2`, which then does
+everything else needed for keeping wifi connection (auto-closing it after 20min of
+idleness), waiting for it to establish (if not open already), mkdir `/web/<date>`,
+check/process image file(s), and run curl to upload file there, with filename sanitization
+(stripping characters that firmware doesn't support, like `:`, `?`, `*`, unicode, etc),
+handling request endpoint/encoding/hacks and per-file success/error checking/reporting.
+
+Basically one run-and-done tool for easy file uploads from the command line.
+
+Under the hood uses [wifi-tmp script] (found next to this one) via sudo
+to keep wifi link running (and enable usb port for it if [hwctl] is used),
+as well as common [fping]/[curl] tools, plus optionally [imagemagick]
+(for sleep.bmp auto-rotation) and python [unidecode] module for better
+unicode-to-ascii filename transliteration (if it's available to import).
+
+Makes some assumptions wrt where to put files, set at the top of the script
+and listed in `-h/--help` output.
+
+[xteink-send]: xteink-send
+[wifi-tmp script]: wifi-tmp
+[hwctl]: https://github.com/mk-fg/hwctl
+[fping]: https://fping.org/
+[curl]: https://curl.se/
+[imagemagick]: https://imagemagick.org/
+[unidecode]: https://pypi.org/project/Unidecode/
+
+<a name=hdr-wifi-tmp></a>
+## [wifi-tmp]
+
+Root script to run via sudo exception, to enable and keep wifi running
+in a reasonably safe manner, until preset inactivity timeout expires,
+used by/for [xteink-send] script above.
+
+Running with `-h/--help` should list profiles from hardcoded wifi-tmp.profiles
+file for [wpa_supplicant], and a couple other parameters, like interface name and
+usb port that enables it (if [hwctl] is used), set at the top of the script.
+
+WiFi-profile lines in `/etc/wpa_supplicant/wifi-tmp.profiles` file to connect
+to AP that couple different firmwares create:
+
+    xx4-papyrix :: 192.168.4.2/24 20m ssid="Papyrix" key_mgmt=NONE
+    xx4-inx :: 192.168.4.2/24 20m ssid="Xteink-X4" key_mgmt=NONE
+
+APs created by firmware tend to be unsecured like that, but then also has quite
+a short range, so probably shouldn't be a problem in practice, but otherwise
+temp-hostapd + stored connection parameters can be used instead - more PITA to
+make it work (entering pw via left-right buttons), and passwordless AP is easier
+to access from other devices (e.g. any laptop or phone when not on home WiFi network).
+
+[wifi-tmp]: wifi-tmp
+[wpa_supplicant]: https://w1.fi/wpa_supplicant/
 
 
 <a name=hdr-links></a>
