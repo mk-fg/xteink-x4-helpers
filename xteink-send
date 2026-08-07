@@ -3,7 +3,7 @@
 declare -A dir=( # not all used as-is
 	[sleep]=/sleep [web]=/web [book]=/books
 	[note]=/notes [image]=/sleep [fw]=/ )
-wifi_instance=xx4 wifi_profile=xx4-current
+wifi_instance=xx4 wifi_profile=xx4-inx
 
 usage() {
 	local bin=${0##*/}
@@ -28,7 +28,7 @@ usage() {
 		echo "- explicitly-specified book uploads go to ${dir[book]}"
 		echo
 		echo "Uses fping/curl and python \"unidecode\" module (for filename sanitization), and runs"
-		echo " \"sudo wifi-tmp $wifi\" from the same repo to init/keep wifi open (for like 20m)."; }
+		echo " \"sudo wifi-tmp $wifi_instance $wifi_profile\" from the same repo to init/keep wifi open (for like 20m)."; }
 	exit ${1:-1}; }
 [[ -n "$1" && "$1" != -h && "$1" != --help \
 	&& "${@: -1}" != -h && "${@: -1}" != --help ]] || usage 0
