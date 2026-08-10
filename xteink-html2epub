@@ -159,6 +159,9 @@ def main(args=None):
 	parser.add_argument('-o', '--out-file', metavar='file', help=dd(f'''
 		Output filename to use instead of putting .epub files next to source HTML ones.
 		Only allowed with a single input file.'''))
+	parser.add_argument('-O', '--out-dir', metavar='dir', help=dd(f'''
+		Directory to put output file(s) to, under same filename(s) derived from source files.
+		Must be an existing dir, will NOT be created automatically. Filenames must not conflict.'''))
 	parser.add_argument('-p', '--print', metavar='type[:n]', help=dd(f'''
 		Print specific HTML processing stage to stdout for Nth file (default is 1 - first one).
 		Should be in "type[:n]" format, with "type" being one of: {', '.join(print_types)}.
@@ -167,6 +170,7 @@ def main(args=None):
 	opts = parser.parse_args(sys.argv[1:] if args is None else args)
 
 	p_out = lambda *a,**kw: print(*a, **kw, flush=True)
+	p_err = lambda *a,**kw: print(*a, **kw, file=sys.stderr, flush=True)
 	if opts.quiet: p_out = lambda *a,**kw: None
 	if not opts.print: pt = pn = None
 	pp = adict((pt.replace(*'-_'), dict.fromkeys(range(1, 999))) for pt in print_types)
@@ -176,10 +180,14 @@ def main(args=None):
 		pp[pt.lower().replace(*'-_')][int(pn)] = True
 	if (p_dst := opts.out_file) and len(opts.html_files) > 1:
 		parser.error('-o/--out-file option is only allowed with single input file')
+	if p_dst_dir := opts.out_dir:
+		if p_dst: parser.error('-o/--out-file and -O/--out-dir options are mutually exclusive')
+		if not (p_dst_dir := pl.Path(p_dst_dir)).is_dir():
+			parser.error('-O/--out-dir is missing/bogus/inaccessible')
 
-	files = list()
+	files, p_epub_conflicts = list(), cs.defaultdict(list)
 	for n, p in enumerate(map(pl.Path, opts.html_files), 1):
-		if not p.is_file(): parser.error(f'Input file is missing/inaccessible: {p}')
+		if not p.is_file(): parser.error(f'Input file is missing/bogus/inaccessible: {p}')
 		if pp.input[n]: p_out(p.read_text().strip())
 		proc = sp.run(['rdrview', '--meta', '--', p], stdout=sp.PIPE, check=True)
 		meta, key = adict(), None
@@ -197,7 +205,16 @@ def main(args=None):
 		else:
 			p_epub = p.parent / ((p.stem if len(p.suffix) <= 7 else p.name) + '.epub')
 			if str(p).lower() == str(p_epub).lower(): p_epub = p_epub.with_suffix('.proc.epub')
+			if p_dst_dir: p_epub = p_dst_dir / p_epub.name
 		files.append(adict(p=p, n=n, p_epub=p_epub, meta=meta, body=body))
+		p_epub_conflicts[p_epub].append(p)
+
+	for p_epub, ps in p_epub_conflicts.items():
+		if len(ps) == 1: continue
+		p_err(f'ERROR: Output filename conflict [ {p_epub} ] for source files:')
+		for p in ps: p_err(f'  {p}')
+		p_epub_conflicts = None
+	if not p_epub_conflicts: return 1
 
 	for fx in files:
 		fx.title = fx.meta.get('title') or fx.meta.get('excerpt') or fx.p.stem
