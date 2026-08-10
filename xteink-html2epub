@@ -102,27 +102,29 @@ def epub_html_img(ctx, src, srcset, img_proc):
 		if m := re.match(r'([a-zA-Z]+)', fmt): # strip number-suffix
 			fmt, name = m[1], name_for_fs(p.name, 'img')
 
-	if fmt not in fmts: raise ImgProcErr(f'Unrecognized format {fmt!r} [ {p} ]')
+	if fmt not in fmts: raise ImgProcErr(f'Unrecognized format {fmt!r} [ {p.name} ]')
 	with p.open('rb') as src: tag = str_hash(src, 4) # used to dedup images
 	proc = sp.Popen(magick_conv(p), stdout=sp.PIPE)
 	if len(png := proc.stdout.read(sz_max)) == sz_max:
-		proc.kill(); proc.wait(); raise ImgProcErr(f'Size too large (>{sz_max:,d}B)')
-	if proc.wait(timeout=1): raise ImgProcErr(f'magick-convert falied [ {p} ]')
+		proc.kill(); proc.wait(); raise ImgProcErr(f'Size >{sz_max:,d}B [ {p.name} ]')
+	if proc.wait(timeout=1): raise ImgProcErr(f'magick-convert falied [ {p.name} ]')
 	return adict(name=name, fmt=fmt, tag=tag, png=png)
 
 
 def epub_html_wrap(title, body, img_proc):
 	doc = lxhtml.fragment_fromstring(body, lxhtml.HTMLParser())
-	for tag in 'pre', 'code':
-		for pre in doc.xpath(f'//{tag}'):
-			p = '<br />'.join(html.escape(line) for line in pre.text_content().splitlines())
-			p = lxhtml.fragment_fromstring(f'<p>{p}</p>')
-			pre.getparent().replace(pre, p)
-	for tag in 'video', 'audio', 'source': # not needed, can have massive data: urls
-		for e in doc.xpath(f'//{tag}'): e.drop_tree()
+	for pre in doc.xpath('//pre|//code'): # reader app drops these - convert to <p>/<br>
+		p = '<br />'.join(html.escape(line) for line in pre.text_content().splitlines())
+		p = lxhtml.fragment_fromstring(f'<p>{p}</p>')
+		pre.getparent().replace(pre, p)
+	for e in doc.xpath('//ul|//ol'): # single-item lists create persistent indent - reader bug
+		if len(lis := list(e.xpath('./li'))) != 1: continue
+		lis[0].drop_tag(); e.tag = 'div'
+	# Non-image media isn't needed, can have massive data-urls from SingleFile
+	for e in doc.xpath('//video|//audio|//source'): e.drop_tree()
 
 	img_map = dict()
-	for e in doc.xpath('//img'):
+	for e in doc.xpath('//img'): # image srcs get normalized/deduped, added to epub zip
 		if not img_proc: e.drop_tree(); continue
 		with cl.ExitStack() as ctx:
 			try: img = epub_html_img( ctx,
@@ -189,7 +191,7 @@ def html_to_epub(title, doc, img_list, pp=None):
 			</manifest>
 			<spine toc="ncx"><itemref idref="text"/></spine>
 			</package>''').format(img_items=''.join(
-				f'\n  <item id="img.{img.tag}" href="{img.fn}" media-type="image/png" />'
+				f'\n  <item id="img.{img.tag}" href="{img.fn}" media-type="image/png"/>'
 				for img in img_list )))
 		pp.opf(opf)
 		body.writestr('OEBPS/text.xhtml', doc)
@@ -262,10 +264,11 @@ def main(args=None):
 			 - No cover image, random urn:uuid:... for book ID, current date/time, no other metadata.
 			 - EPUB 2 toc.ncx and EPUB 3 nav.xhtml, both with single chapter, using same doc title.
 			 - Full rdrview HTML-text extract for single-chapter body, with xml/html/xhtml headers.
-			 - Reader-problematic <pre>/<code> tags replaced by <p> with <br/>-separated lines.
 			 - Images for "img" tags are extracted from data-URLs or loaded via relative file-urls,
 					then imagemagick-downscaled/converted for resulting epub, if found/recognized.
 			 - Other media tags like <audio>/<video>/<source ...> are removed.
+			 - Reader-problematic <pre>/<code> tags replaced by <p> with <br/>-separated lines.
+			 - Single-item <ol>/<ul> lists are converted to <div> - reader-bug with stuck indents.
 
 			libxml2 tools and -p/--print option can be used to inspect resulting xhtml:
 				./xteink-html2epub bad.html -qp xhtml | xmllint --pretty 2 - | less''') + ' ')
