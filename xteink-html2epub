@@ -64,7 +64,7 @@ href_base = adict(schema='https://', host='h2e.local', path='h2ex')
 
 class ImgProcErr(Exception): pass
 
-def epub_html_img(ctx, e, p_base, fit='400x400', grayscale='rec709luma'):
+def epub_html_img(ctx, src, srcset, img_proc):
 	fmts = ( 'jpg', 'png', 'heif', 'heifs', 'heic', 'heics', 'avci', 'avcs',
 		'hif', 'avif', 'jxl', 'jpe', 'jpeg', 'jps', 'jp', 'jif', 'jfif', 'jfi',
 		'svg', 'svgz', 'gif', 'webp', 'apng', 'bmp', 'tiff', 'tga' ) # see: magick -list format
@@ -74,12 +74,12 @@ def epub_html_img(ctx, e, p_base, fit='400x400', grayscale='rec709luma'):
 	magick_bin = 'magick'
 	magick_idfmt = magick_bin, 'identify', '-format', '%m\n'
 	magick_conv = lambda p: ( magick_bin,
-		f'{p}[0]', '-scale', fit, '-grayscale', grayscale, 'png:-' )
+		f'{p}[0]', '-scale', img_proc.fit, '-grayscale', img_proc.gray, 'png:-' )
 
-	if not (url := e.attrib.get('src')) and (url := e.attrib.get('srcset')):
-		url = list(s.split(None, 1)[0] for s in src.split(',') if s)
-		if url: url = url[0]; del e.attrib['srcset']
-	if not url: url = ''
+	if not (url := src) and (url := srcset):
+		url = list(s.strip().split(None, 1)[0] for s in src.split(',') if s)
+		if url: url = url[0]
+	if not url: raise ImgProcErr('Missing src URL')
 
 	if m := re.fullmatch(r'(?i)data:image/([-\w+]+);base64,(.*)', url):
 		data, fmt = m[2], fmt_mime.get(fmt := m[1].lower()) or fmt
@@ -92,8 +92,8 @@ def epub_html_img(ctx, e, p_base, fit='400x400', grayscale='rec709luma'):
 	else: # check if it's an accessible file, test/convert via imagemagick
 		if url.startswith(src_pre):
 			url = url[len(src_pre):].removeprefix(f'{href_base.path}/')
-			p = p_base / f'./{url}'
-		elif re.match(r'[\w/.]', url): p = p_base / f'./{url}'
+			p = img_proc.p / f'./{url}'
+		elif re.match(r'[\w/.]', url): p = img_proc.p / f'./{url}'
 		else: p = None # absolute URL or something odd
 		if not p or not (p := p.resolve()).is_file():
 			raise ImgProcErr(f'File missing/inaccessible [ {url} ]')
@@ -125,7 +125,8 @@ def epub_html_wrap(title, body, img_proc):
 	for e in doc.xpath('//img'):
 		if not img_proc: e.drop_tree(); continue
 		with cl.ExitStack() as ctx:
-			try: img = epub_html_img(ctx, e, img_proc.p)
+			try: img = epub_html_img( ctx,
+				e.attrib.get('src'), e.attrib.get('srcset'), img_proc )
 			except Exception as err:
 				if not isinstance(err, ImgProcErr): err = err_fmt(err)
 				img = None; img_proc.pr_err(f'WARN: Dropping html-img :: {err}')
@@ -133,7 +134,7 @@ def epub_html_wrap(title, body, img_proc):
 		if not (img2 := img_map.get(img.tag)):
 			img2 = img_map[img.tag] = img
 			img2.fn = f'{img.name}.{img.tag}.png'
-		e.attrib['src'] = img2.fn
+		e.attrib.pop('srcset', None); e.attrib['src'] = img2.fn
 
 	# lxml will output broken XML that it itself won't validate anyway
 	body = lx.tostring(doc, method='xml', encoding='unicode', pretty_print=True)
@@ -268,22 +269,35 @@ def main(args=None):
 
 			libxml2 tools and -p/--print option can be used to inspect resulting xhtml:
 				./xteink-html2epub bad.html -qp xhtml | xmllint --pretty 2 - | less''') + ' ')
-	parser.add_argument('html_files', nargs='+', help=dd('''
+
+	group = parser.add_argument_group('Inputs/outputs')
+	group.add_argument('html_files', nargs='+', help=dd('''
 		HTML file(s) to convert. Always processed by rdrview tool first to normalize contents.
 		Output epub files are generated next to those, replacing filename extension with .epub'''))
-	parser.add_argument('-o', '--out-file', metavar='file', help=dd(f'''
+	group.add_argument('-o', '--out-file', metavar='file', help=dd(f'''
 		Output filename to use instead of putting .epub files next to source HTML ones.
 		Only allowed with a single input file.'''))
-	parser.add_argument('-O', '--out-dir', metavar='dir', help=dd(f'''
+	group.add_argument('-O', '--out-dir', metavar='dir', help=dd(f'''
 		Directory to put output file(s) to, under same filename(s) derived from source files.
 		Must be an existing dir, will NOT be created automatically. Filenames must not conflict.'''))
-	parser.add_argument('-p', '--print', metavar='type[:n]', help=dd(f'''
+
+	group = parser.add_argument_group('Image processing')
+	group.add_argument('--img-strip', action='store_true',
+		help='Remove all images instead of any kind of processing.')
+	group.add_argument('--img-gray', metavar='method', default='rec601luma', help=dd('''
+		ImageMagick "intensity" formula for converting image to grayscale. Default: %(default)s
+		See https://imagemagick.org/command-line-options/#intensity for list/descriptions.'''))
+	group.add_argument('--img-fit', metavar='size', default='400x700>', help=dd('''
+		ImageMagick -scale spec for images. Default: %(default)s (shrink to fit)
+		See https://imagemagick.org/command-line-processing/#geometry for details.'''))
+
+	group = parser.add_argument_group('Console outputs')
+	group.add_argument('-q', '--quiet', action='store_true', help='Suppress normal output.')
+	group.add_argument('-p', '--print', metavar='type[:n]', help=dd(f'''
 		Print specific HTML processing stage to stdout for Nth file (default is 1 - first one).
 		Should be in "type[:n]" format, with "type" being one of: {' '.join(print_types)}
 		Intended to check what went wrong during processing.'''))
-	parser.add_argument('--no-images', action='store_true',
-		help='Remove all images instead of any kind of processing.')
-	parser.add_argument('-q', '--quiet', action='store_true', help='Suppress normal output.')
+
 	opts = parser.parse_args(sys.argv[1:] if args is None else args)
 
 	class pr_null_cls: __bool__ = lambda s: False; __call__ = lambda s,*a,**kw: None
@@ -343,7 +357,8 @@ def main(args=None):
 	for fx in files:
 		fx.title = fx.meta.get('title') or fx.meta.get('excerpt') or fx.p.stem
 		html, img_list = epub_html_wrap( fx.title, fx.body,
-			img_proc=not opts.no_images and adict(p=fx.p.resolve().parent, pr_err=pr_err) )
+			img_proc=not opts.img_strip and adict( pr_err=pr_err,
+				p=fx.p.resolve().parent, gray=opts.img_gray, fit=opts.img_fit ))
 		fx.epub = html_to_epub( fx.title, html,
 			img_list, pp=adict((k, pp[k][fx.n]) for k in pp) )
 
