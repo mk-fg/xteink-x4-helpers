@@ -1,20 +1,47 @@
 #!/usr/bin/env python
 
-import pathlib as pl, subprocess as sp, contextlib as cl
+import pathlib as pl, subprocess as sp, contextlib as cl, hashlib as hl
 import datetime as dt, collections as cs, textwrap as tw, zipfile as z
-import os, sys, re, io, html, tempfile, uuid
+import os, sys, re, io, html, tempfile, uuid, base64
 
 import lxml.html as lxhtml, lxml.etree as lx # https://lxml.de/
 
 
 dd = lambda text: re.sub( r' \t+', ' ',
 	tw.dedent(text).strip('\n') + '\n' ).replace('\t', '  ')
+err_fmt = lambda err: f'[{err.__class__.__name__}] {err}'
 
 class adict(dict):
 	def __init__(self, *args, **kws):
 		super().__init__(*args, **kws)
 		self.__dict__ = self
 	def __call__(self, **kws): self.update(kws); return self
+
+def str_hash(bs, c=None, key=b'xte-h2e', strip=''):
+	if isinstance(bs, (bytes, bytearray)): bs = hl.blake2b(bs, key=key)
+	elif hasattr(bs, 'read'): bs = hl.file_digest(bs, lambda: hl.blake2b(key=key))
+	else: bs = hl.blake2b(str(bs).encode(), key=key)
+	s = base64.urlsafe_b64encode(bs.digest()).decode()
+	if not isinstance(strip, dict): strip = dict.fromkeys(map(ord, strip + '-_='))
+	s = s.translate(strip)
+	if c is None: return s
+	for n in range(30): # limit is to avoid unlikely a -> ... -> a loops
+		if len(s) < c: s = str_hash(s, c, key, strip)
+		if len(s) >= c: break
+	else: raise RuntimeError(f'str_hash() failed {[c, key, strip]}')
+	return s[:c]
+
+_name_subs = { r'[\\/\?\*;]': '_', r'^\.+': '_', r':': '-_',
+	r'<': '(', r'>': ')', r'\*': '+', r'[|!"]': '-', '#': 'N',
+	'[\'’,\x00-\x1f]': '', r'\.+\Z': '_', r'\s+\Z': '', r'\s': '_' }
+def name_for_fs( name, fallback=...,
+		_name_subs=list((re.compile(k), v) for k,v in _name_subs.items()) ):
+	if not name and fallback is not ...: return fallback
+	for sub_re, sub in _name_subs: name = sub_re.sub(sub, name)
+	if len(name) > 80:
+		name, _, ext = name.rpartition('.')
+		name = '.'.join([name[:70], str_hash(name, 4), ext])
+	return name
 
 @cl.contextmanager
 def file_replacement(p):
@@ -31,13 +58,83 @@ def file_replacement(p):
 			except FileNotFoundError: pass
 
 
-def epub_html_wrap(title, body):
+# href_base is for rdrview commands, to match in its output later
+# Absolute URLs or base+url in doc won't be replaced by this - only used as fallback
+href_base = adict(schema='https://', host='h2e.local', path='h2ex')
+
+class ImgProcErr(Exception): pass
+
+def epub_html_img(ctx, e, p_base, fit='400x400', grayscale='rec709luma'):
+	fmts = ( 'jpg', 'png', 'heif', 'heifs', 'heic', 'heics', 'avci', 'avcs',
+		'hif', 'avif', 'jxl', 'jpe', 'jpeg', 'jps', 'jif', 'jfif', 'jfi',
+		'svg', 'svgz', 'gif', 'webp', 'apng', 'bmp', 'tiff', 'tga' ) # see: magick -list format
+	fmt_mime = {'heif-sequence': 'heifs', 'heic-sequence': 'heics', 'svg+xml': 'svg'}
+	src_pre, sz_max = f'{href_base.schema}{href_base.host}/', 1 * 2**20 # G400x ~ 35K
+
+	magick_bin = 'magick'
+	magick_idfmt = magick_bin, 'identify', '-format', '%m\n'
+	magick_conv = lambda p: ( magick_bin,
+		f'{p}[0]', '-scale', fit, '-grayscale', grayscale, 'png:-' )
+
+	if not (url := e.attrib.get('src')) and (url := e.attrib.get('srcset')):
+		url = list(s.split(None, 1)[0] for s in src.split(',') if s)
+		if url: url = url[0]; del e.attrib['srcset']
+	if not url: url = ''
+
+	if m := re.fullmatch(r'(?i)data:image/([-\w+]+);base64,(.*)', url):
+		data, fmt = m[2], fmt_mime.get(fmt := m[1].lower()) or fmt
+		if len(data) > sz_max * 1.2: raise ImgProcErr(f'Size too large (>{sz_max:,d}B)')
+		dec = base64.urlsafe_b64decode if re.search(r'[-+]', data) else base64.standard_b64decode
+		tmp = ctx.enter_context( tempfile
+			.NamedTemporaryFile(prefix='xteink.html2epub.', suffix=f'.{fmt}') )
+		tmp.write(dec(data)); tmp.flush(); del data, url
+		p, name = pl.Path(tmp.name), 'img'
+
+	else: # check if it's an accessible file, test/convert it via imagemagick
+		if url.startswith(src_pre):
+			url = url[len(src_pre):].removeprefix(f'{href_base.path}/')
+			p = p_base / f'./{url}'
+		elif re.match(r'[\w/.]', url): p = p_base / f'./{url}'
+		else: p = None # absolute URL or something odd
+		if not p or not (p := p.resolve()).is_file():
+			raise ImgProcErr(f'File missing/inaccessible [ {url} ]')
+		fmt_raw = sp.run( [*magick_idfmt, '--', p],
+			check=True, stdout=sp.PIPE ).stdout.decode().strip().lower()
+		if not (m := re.match(r'(\w+)', fmt_raw)): return
+		fmt, name = m[1], name_for_fs(p.name, 'img')
+
+	if fmt not in fmts: raise ImgProcErr(f'Unrecognized format {fmt_raw!r} [ {p} ]')
+	with p.open('rb') as src: tag = str_hash(src, c=4) # used to dedup images
+	proc = sp.Popen(magick_conv(p), stdout=sp.PIPE)
+	if len(png := proc.stdout.read(sz_max := 1 * 2**20)) == sz_max:
+		proc.kill(); proc.wait(); raise ImgProcErr(f'Size too large (>{sz_max:,d}B)')
+	if proc.wait(timeout=1): raise ImgProcErr(f'magick-convert falied [ {p} ]')
+	return adict(name=name, fmt=fmt, tag=tag, png=png)
+
+def epub_html_wrap(title, body, img_proc):
 	doc = lxhtml.fragment_fromstring(body, lxhtml.HTMLParser())
 	for tag in 'pre', 'code':
 		for pre in doc.xpath(f'//{tag}'):
 			p = '<br />'.join(html.escape(line) for line in pre.text_content().splitlines())
 			p = lxhtml.fragment_fromstring(f'<p>{p}</p>')
 			pre.getparent().replace(pre, p)
+	for tag in 'video', 'audio', 'source': # not needed, can have massive data: urls
+		for e in doc.xpath(f'//{tag}'): e.drop_tree()
+
+	img_map = dict()
+	for e in doc.xpath(f'//img'):
+		with cl.ExitStack() as ctx:
+			try: img = epub_html_img(ctx, e, img_proc.p)
+			except Exception as err:
+				if not isinstance(err, ImgProcErr): err = err_fmt(err)
+				img = None; img_proc.pr_err(
+					f'WARN: Dropping html-img :: {err}' )
+		if not img: e.drop_tree(); continue
+		if not (img2 := img_map.get(img.tag)):
+			img2 = img_map[img.tag] = img
+			img2.fn = f'{img.name}.{img.tag}.png'
+		e.attrib['src'] = img2.fn
+
 	# lxml will output broken XML that it itself won't validate anyway
 	body = lx.tostring(doc, method='xml', encoding='unicode', pretty_print=True)
 	doc = dd(f'''
@@ -48,9 +145,9 @@ def epub_html_wrap(title, body):
 		<head><meta charset="utf-8"/><title>{html.escape(title)}</title></head>
 		<body>''') + f'\n{body}\n</body>\n</html>'
 	# lx.fromstring(doc, lxhtml.HTMLParser(recover=False))
-	return doc
+	return doc, list(img_map.values())
 
-def html_to_epub(title, doc):
+def html_to_epub(title, doc, img_list, pp=None):
 	'Creates epub container with xml boilerplate around html in there'
 	# See https://en.wikipedia.org/wiki/EPUB for details
 	# Spec - https://www.w3.org/TR/epub-33/
@@ -62,14 +159,15 @@ def html_to_epub(title, doc):
 		html_ts = html.escape( dt.datetime
 			.now(dt.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ') )
 		html_title = html.escape(title)
-		body.writestr('META-INF/container.xml', dd('''
+		body.writestr('META-INF/container.xml', s := dd('''
 			<?xml version="1.0" encoding="utf-8"?>
 			<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
 			<rootfiles>
 				<rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
 			</rootfiles>
 			</container>'''))
-		body.writestr('OEBPS/content.opf', dd(f'''
+		pp.xml(s)
+		opf = dd(f'''
 			<?xml version="1.0" encoding="utf-8"?>
 			<package xmlns="http://www.idpf.org/2007/opf" version="3.0"
 				unique-identifier="BookId" prefix="rendition: http://www.idpf.org/vocab/rendition/#">
@@ -85,12 +183,17 @@ def html_to_epub(title, doc):
 			<manifest>
 				<item id="text" href="text.xhtml" media-type="application/xhtml+xml"/>
 				<item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>
-				<item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>
+				<item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>{{img_items}}
 			</manifest>
 			<spine toc="ncx"><itemref idref="text"/></spine>
-			</package>'''))
+			</package>''')
+		body.writestr('OEBPS/content.opf', opf := opf.format(img_items=''.join(
+			f'\n  <item id="img.{img.tag}" href="{img.fn}" media-type="image/png" />'
+			for img in img_list )))
+		pp.opf(opf)
 		body.writestr('OEBPS/text.xhtml', doc)
-		body.writestr('OEBPS/toc.ncx', dd(f'''
+		pp.xhtml(doc)
+		body.writestr('OEBPS/toc.ncx', s := dd(f'''
 			<?xml version="1.0" encoding="utf-8"?>
 			<!DOCTYPE ncx PUBLIC "-//NISO//DTD ncx 2005-1//EN"
 				"http://www.daisy.org/z3986/2005/ncx-2005-1.dtd">
@@ -111,7 +214,8 @@ def html_to_epub(title, doc):
 				</navPoint>
 			</navMap>
 			</ncx>'''))
-		body.writestr('OEBPS/nav.xhtml', dd('''
+		pp.ncx(s)
+		body.writestr('OEBPS/nav.xhtml', s := dd('''
 			<?xml version="1.0" encoding="utf-8"?>
 			<!DOCTYPE html>
 			<html xmlns="http://www.w3.org/1999/xhtml"
@@ -128,11 +232,13 @@ def html_to_epub(title, doc):
 				</nav>
 			</body>
 			</html>'''))
+		pp.nav(s)
+		for img in img_list: body.writestr(f'OEBPS/{img.fn}', img.png)
 	return epub.getvalue()
 
 
 def main(args=None):
-	print_types = 'input body xhtml'.split()
+	print_types = 'input body xhtml xml opf ncx nav'.split()
 
 	import argparse
 	parser = argparse.ArgumentParser(
@@ -144,15 +250,24 @@ def main(args=None):
 				targeting Xteink X4 eReader firmwares in particular.
 			Uses https://github.com/eafer/rdrview tool to strip-down/simplify html first,
 				then fixes couple html quirks that tend not to work/render in reader apps,
-				and then puts epub wrapper around the file (zip container + META-INF + oebps).'''),
+				and then puts epub wrapper around the file (zip container + META-INF + oebps).
+			Requires imagemagick command-line tools ("magick" command) to check and
+				convert WEBP/AVIF/HEIF/JXL/SVG/APNG/GIF/etc formats to downscaled grayscale PNGs.
+			Works offline, does not fetch anything (rdrview shouldn't either),
+				but can load/pack images from local files relative to html file.'''),
 		epilog=dd('''
 			Resulting EPUB structure should be:
 			 - Title from either page title or excerpt, as extracted by rdrview --meta.
 			 - No cover image, random urn:uuid:... for book ID, current date/time, no other metadata.
 			 - EPUB 2 toc ncx and EPUB 3 nav xhtml, both with single chapter, using same doc title.
 			 - Full rdrview HTML-text extract for single-chapter body, with xml/html/xhtml headers.
-			 - Reader-problematic <pre>/<code> tags replaced by <p> with <br/>-separated lines.''')+' ')
-		# XXX: images - check how rdrview handles those, maybe extract/convert/insert
+			 - Reader-problematic <pre>/<code> tags replaced by <p> with <br/>-separated lines.
+			 - Images for "img" tags are extracted from data-URLs or loaded via relative file-urls,
+					then imagemagick-downscaled/converted for resulting epub, if found/recognized.
+			 - Other media tags like <audio>/<video>/<source ...> are removed.
+
+			libxml2 tools and -p/--print option can be used to inspect resulting xhtml:
+				./xteink-html2epub bad.html -qp xhtml | xmllint --pretty 2 - | less''') + ' ')
 	parser.add_argument('html_files', nargs='+', help=dd('''
 		HTML file(s) to convert. Always processed by rdrview tool first to normalize contents.
 		Output epub files are generated next to those, replacing filename extension with .epub'''))
@@ -169,15 +284,17 @@ def main(args=None):
 	parser.add_argument('-q', '--quiet', action='store_true', help='Suppress normal output.')
 	opts = parser.parse_args(sys.argv[1:] if args is None else args)
 
-	p_out = lambda *a,**kw: print(*a, **kw, flush=True)
-	p_err = lambda *a,**kw: print(*a, **kw, file=sys.stderr, flush=True)
-	if opts.quiet: p_out = lambda *a,**kw: None
+	class pr_null_cls: __bool__ = lambda s: False; __call__ = lambda s,*a,**kw: None
+	pr_null = pr_null_cls()
+	pr_out = pr_out_nq = lambda *a,**kw: print(*a, **kw, flush=True)
+	pr_err = lambda *a,**kw: print(*a, **kw, file=sys.stderr, flush=True)
+	if opts.quiet: pr_out = pr_null
 	if not opts.print: pt = pn = None
-	pp = adict((pt.replace(*'-_'), dict.fromkeys(range(1, 999))) for pt in print_types)
+	pp = adict((pt.replace(*'-_'), dict.fromkeys(range(1, 999), pr_null)) for pt in print_types)
 	if opts.print:
 		pt, pn = (opts.print.split(':', 1) + [1])[:2]
 		if pt not in print_types: parser.error(f'Unrecognized -p/--print value: {opts.print}')
-		pp[pt.lower().replace(*'-_')][int(pn)] = True
+		pp[pt.lower().replace(*'-_')][int(pn)] = pr_out_nq
 	if (p_dst := opts.out_file) and len(opts.html_files) > 1:
 		parser.error('-o/--out-file option is only allowed with single input file')
 	if p_dst_dir := opts.out_dir:
@@ -185,11 +302,16 @@ def main(args=None):
 		if not (p_dst_dir := pl.Path(p_dst_dir)).is_dir():
 			parser.error('-O/--out-dir is missing/bogus/inaccessible')
 
+	rdrview_bin = 'rdrview'
+	rdrview_meta = rdrview_bin, '--meta',
+	rdrview_conv = ( rdrview_bin, '--html', '--base',
+		f'{href_base.schema}{href_base.host}/{href_base.path}/' )
+
 	files, p_epub_conflicts = list(), cs.defaultdict(list)
 	for n, p in enumerate(map(pl.Path, opts.html_files), 1):
 		if not p.is_file(): parser.error(f'Input file is missing/bogus/inaccessible: {p}')
-		if pp.input[n]: p_out(p.read_text().strip())
-		proc = sp.run(['rdrview', '--meta', '--', p], stdout=sp.PIPE, check=True)
+		if pr := pp.input[n]: pr(p.read_text().strip())
+		proc = sp.run([*rdrview_meta, '--', p], stdout=sp.PIPE, check=True)
 		meta, key = adict(), None
 		for line in proc.stdout.decode().splitlines():
 			if not line.strip(): continue
@@ -198,9 +320,9 @@ def main(args=None):
 			elif key and (m := re.fullmatch(r'\s+(.*)', line)): meta[key] += f' {m[1]}'
 		if meta.get('readerable', '').lower() != 'yes':
 			parser.error(f'ERROR: rdrview failed to process file: {p}')
-		proc = sp.run(['rdrview', '--html', '--', p], stdout=sp.PIPE, check=True)
+		proc = sp.run([*rdrview_conv, '--', p], stdout=sp.PIPE, check=True)
 		body = proc.stdout.decode()
-		if pp.body[n]: p_out(body.strip())
+		if pr := pp.body[n]: pr(body.strip())
 		if p_dst: p_epub = p_dst
 		else:
 			p_epub = p.parent / ((p.stem if len(p.suffix) <= 7 else p.name) + '.epub')
@@ -211,23 +333,24 @@ def main(args=None):
 
 	for p_epub, ps in p_epub_conflicts.items():
 		if len(ps) == 1: continue
-		p_err(f'ERROR: Output filename conflict [ {p_epub} ] for source files:')
-		for p in ps: p_err(f'  {p}')
+		pr_err(f'ERROR: Output filename conflict [ {p_epub} ] for source files:')
+		for p in ps: pr_err(f'  {p}')
 		p_epub_conflicts = None
 	if not p_epub_conflicts: return 1
 
 	for fx in files:
 		fx.title = fx.meta.get('title') or fx.meta.get('excerpt') or fx.p.stem
-		fx.html = epub_html_wrap(fx.title, fx.body)
-		if pp.xhtml[fx.n]: p_out(fx.html)
-		fx.epub = html_to_epub(fx.title, fx.html)
+		html, img_list = epub_html_wrap( fx.title, fx.body,
+			img_proc=adict(p=fx.p.resolve().parent, pr_err=pr_err) )
+		fx.epub = html_to_epub( fx.title, html,
+			img_list, pp=adict((k, pp[k][fx.n]) for k in pp) )
 
 	with cl.ExitStack() as ctx:
 		for fx in files:
 			out = fx.out = ctx.enter_context(file_replacement(fx.p_epub))
 			out.write(fx.epub)
 		for fx in files:
-			p_out(f'Created epub file: {fx.p_epub}')
+			pr_out(f'Created epub file: {fx.p_epub}')
 			fx.out.commit = True
 
 if __name__ == '__main__': sys.exit(main())

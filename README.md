@@ -115,12 +115,14 @@ simplify any routine file management operations.
 
 Script to convert any stored [reader-mode]-friendly webpage/[HTML file]
 (one that has bunch of text) to a simple all-text-in-one-chapter [EPUB file]
-(basically same HTML in [.zip archive]), discarding anything else that might
-negatively impact readability on eReader firmwares.
+(basically same HTML in [.zip archive]), fixing or discarding anything that
+might negatively impact readability on eReader firmwares.
 
 Uses/requires [rdrview] tool to find/extract and simplify text from HTML,
-and [python lxml module] to further process resulting HTML text-body to fix various
-issues with HtmlSlimParser used by CrossPoint firmware forks on Xteink devices.
+[python lxml module] to further process resulting HTML text-body to fix various
+issues with HtmlSlimParser used by CrossPoint firmware forks on Xteink devices
+(listed at the end of `-h/--help` output), and [ImageMagick] "magick" cli tool
+to process images for `<img ...>` tags (convert/downscale/grayscale), if any.
 
 Intended to be used with [SingleFile]-saved pages, to make those readable as
 epub files, without cover images, splitting them into useless chapters (that tend
@@ -133,8 +135,8 @@ so more faithful conversion process is, the worse result tends to get for these.
 
 Currently roughly same effect can be acheived by chaining [rdrview] and
 `pandoc -t plain ...` ([pandoc] document converter) tools, except epub file
-is compressed, preserves title, some basic header/bold/italic styling in text,
-and can potentially keep images as well in the future (might add handling for these).
+is compressed, preserves title, some basic header/bold/italic styling in text, lists,
+embeded images.
 
 [xteink-html2epub]: xteink-html2epub
 [reader-mode]:
@@ -144,6 +146,7 @@ and can potentially keep images as well in the future (might add handling for th
 [.zip archive]: https://en.wikipedia.org/wiki/ZIP_(file_format)
 [rdrview]: https://github.com/eafer/rdrview
 [python lxml module]: https://lxml.de
+[imagemagick]: https://imagemagick.org/
 [Calibre]: https://calibre-ebook.com/
 [pandoc]: https://pandoc.org/
 
@@ -231,7 +234,6 @@ and listed in `-h/--help` output.
 [hwctl]: https://github.com/mk-fg/hwctl
 [fping]: https://fping.org/
 [curl]: https://curl.se/
-[imagemagick]: https://imagemagick.org/
 [unidecode]: https://pypi.org/project/Unidecode/
 
 <a name=hdr-wifi-tmp></a>
