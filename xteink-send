@@ -1,7 +1,7 @@
 #!/bin/bash
 
 declare -A dir=( # not all used as-is
-	[sleep]=/sleep [web]=/web [book]=/books
+	[sleep]=/sleep [web]=/_web [book]=/books
 	[note]=/notes [image]=/sleep [fw]=/ )
 wifi_instance=xx4 wifi_profile=xx4-inx
 

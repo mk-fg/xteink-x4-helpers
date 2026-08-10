@@ -251,8 +251,8 @@ def main(args=None):
 			Uses https://github.com/eafer/rdrview tool to strip-down/simplify html first,
 				then fixes couple html quirks that tend not to work/render in reader apps,
 				and then puts epub wrapper around the file (zip container + META-INF + oebps).
-			Requires imagemagick command-line tools ("magick" command) to check and
-				convert WEBP/AVIF/HEIF/JXL/SVG/APNG/GIF/etc formats to downscaled grayscale PNGs.
+			Requires imagemagick command-line tools ("magick" command)
+				to check and convert any known image formats to downscaled grayscale PNGs.
 			Works offline, does not fetch anything (rdrview shouldn't either),
 				but can load/pack images from local files relative to html file.'''),
 		epilog=dd('''
