@@ -66,7 +66,7 @@ class ImgProcErr(Exception): pass
 
 def epub_html_img(ctx, e, p_base, fit='400x400', grayscale='rec709luma'):
 	fmts = ( 'jpg', 'png', 'heif', 'heifs', 'heic', 'heics', 'avci', 'avcs',
-		'hif', 'avif', 'jxl', 'jpe', 'jpeg', 'jps', 'jif', 'jfif', 'jfi',
+		'hif', 'avif', 'jxl', 'jpe', 'jpeg', 'jps', 'jp', 'jif', 'jfif', 'jfi',
 		'svg', 'svgz', 'gif', 'webp', 'apng', 'bmp', 'tiff', 'tga' ) # see: magick -list format
 	fmt_mime = {'heif-sequence': 'heifs', 'heic-sequence': 'heics', 'svg+xml': 'svg'}
 	src_pre, sz_max = f'{href_base.schema}{href_base.host}/', 500 * 2**10 # G400x ~ 35K
@@ -89,7 +89,7 @@ def epub_html_img(ctx, e, p_base, fit='400x400', grayscale='rec709luma'):
 		tmp.write(dec(data)); tmp.flush(); del data, url
 		p, name = pl.Path(tmp.name), 'img'
 
-	else: # check if it's an accessible file, test/convert it via imagemagick
+	else: # check if it's an accessible file, test/convert via imagemagick
 		if url.startswith(src_pre):
 			url = url[len(src_pre):].removeprefix(f'{href_base.path}/')
 			p = p_base / f'./{url}'
@@ -97,15 +97,15 @@ def epub_html_img(ctx, e, p_base, fit='400x400', grayscale='rec709luma'):
 		else: p = None # absolute URL or something odd
 		if not p or not (p := p.resolve()).is_file():
 			raise ImgProcErr(f'File missing/inaccessible [ {url} ]')
-		fmt_raw = sp.run( [*magick_idfmt, '--', p],
+		fmt = sp.run( [*magick_idfmt, '--', p],
 			check=True, stdout=sp.PIPE ).stdout.decode().strip().lower()
-		if not (m := re.match(r'(\w+)', fmt_raw)): return
-		fmt, name = m[1], name_for_fs(p.name, 'img')
+		if m := re.match(r'([a-zA-Z]+)', fmt): # strip number-suffix
+			fmt, name = m[1], name_for_fs(p.name, 'img')
 
-	if fmt not in fmts: raise ImgProcErr(f'Unrecognized format {fmt_raw!r} [ {p} ]')
-	with p.open('rb') as src: tag = str_hash(src, c=4) # used to dedup images
+	if fmt not in fmts: raise ImgProcErr(f'Unrecognized format {fmt!r} [ {p} ]')
+	with p.open('rb') as src: tag = str_hash(src, 4) # used to dedup images
 	proc = sp.Popen(magick_conv(p), stdout=sp.PIPE)
-	if len(png := proc.stdout.read(sz_max := 1 * 2**20)) == sz_max:
+	if len(png := proc.stdout.read(sz_max)) == sz_max:
 		proc.kill(); proc.wait(); raise ImgProcErr(f'Size too large (>{sz_max:,d}B)')
 	if proc.wait(timeout=1): raise ImgProcErr(f'magick-convert falied [ {p} ]')
 	return adict(name=name, fmt=fmt, tag=tag, png=png)
@@ -122,13 +122,13 @@ def epub_html_wrap(title, body, img_proc):
 		for e in doc.xpath(f'//{tag}'): e.drop_tree()
 
 	img_map = dict()
-	for e in doc.xpath(f'//img'):
+	for e in doc.xpath('//img'):
+		if not img_proc: e.drop_tree(); continue
 		with cl.ExitStack() as ctx:
 			try: img = epub_html_img(ctx, e, img_proc.p)
 			except Exception as err:
 				if not isinstance(err, ImgProcErr): err = err_fmt(err)
-				img = None; img_proc.pr_err(
-					f'WARN: Dropping html-img :: {err}' )
+				img = None; img_proc.pr_err(f'WARN: Dropping html-img :: {err}')
 		if not img: e.drop_tree(); continue
 		if not (img2 := img_map.get(img.tag)):
 			img2 = img_map[img.tag] = img
@@ -168,7 +168,7 @@ def html_to_epub(title, doc, img_list, pp=None):
 			</rootfiles>
 			</container>'''))
 		pp.xml(s)
-		opf = dd(f'''
+		body.writestr('OEBPS/content.opf', opf := dd(f'''
 			<?xml version="1.0" encoding="utf-8"?>
 			<package xmlns="http://www.idpf.org/2007/opf" version="3.0"
 				unique-identifier="BookId" prefix="rendition: http://www.idpf.org/vocab/rendition/#">
@@ -187,10 +187,9 @@ def html_to_epub(title, doc, img_list, pp=None):
 				<item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>{{img_items}}
 			</manifest>
 			<spine toc="ncx"><itemref idref="text"/></spine>
-			</package>''')
-		body.writestr('OEBPS/content.opf', opf := opf.format(img_items=''.join(
-			f'\n  <item id="img.{img.tag}" href="{img.fn}" media-type="image/png" />'
-			for img in img_list )))
+			</package>''').format(img_items=''.join(
+				f'\n  <item id="img.{img.tag}" href="{img.fn}" media-type="image/png" />'
+				for img in img_list )))
 		pp.opf(opf)
 		body.writestr('OEBPS/text.xhtml', doc)
 		pp.xhtml(doc)
@@ -260,7 +259,7 @@ def main(args=None):
 			Resulting EPUB structure should be:
 			 - Title from either page title or excerpt, as extracted by rdrview --meta.
 			 - No cover image, random urn:uuid:... for book ID, current date/time, no other metadata.
-			 - EPUB 2 toc ncx and EPUB 3 nav xhtml, both with single chapter, using same doc title.
+			 - EPUB 2 toc.ncx and EPUB 3 nav.xhtml, both with single chapter, using same doc title.
 			 - Full rdrview HTML-text extract for single-chapter body, with xml/html/xhtml headers.
 			 - Reader-problematic <pre>/<code> tags replaced by <p> with <br/>-separated lines.
 			 - Images for "img" tags are extracted from data-URLs or loaded via relative file-urls,
@@ -280,8 +279,10 @@ def main(args=None):
 		Must be an existing dir, will NOT be created automatically. Filenames must not conflict.'''))
 	parser.add_argument('-p', '--print', metavar='type[:n]', help=dd(f'''
 		Print specific HTML processing stage to stdout for Nth file (default is 1 - first one).
-		Should be in "type[:n]" format, with "type" being one of: {', '.join(print_types)}.
+		Should be in "type[:n]" format, with "type" being one of: {' '.join(print_types)}
 		Intended to check what went wrong during processing.'''))
+	parser.add_argument('--no-images', action='store_true',
+		help='Remove all images instead of any kind of processing.')
 	parser.add_argument('-q', '--quiet', action='store_true', help='Suppress normal output.')
 	opts = parser.parse_args(sys.argv[1:] if args is None else args)
 
@@ -342,7 +343,7 @@ def main(args=None):
 	for fx in files:
 		fx.title = fx.meta.get('title') or fx.meta.get('excerpt') or fx.p.stem
 		html, img_list = epub_html_wrap( fx.title, fx.body,
-			img_proc=adict(p=fx.p.resolve().parent, pr_err=pr_err) )
+			img_proc=not opts.no_images and adict(p=fx.p.resolve().parent, pr_err=pr_err) )
 		fx.epub = html_to_epub( fx.title, html,
 			img_list, pp=adict((k, pp[k][fx.n]) for k in pp) )
 

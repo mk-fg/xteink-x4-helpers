@@ -146,7 +146,7 @@ embeded images.
 [.zip archive]: https://en.wikipedia.org/wiki/ZIP_(file_format)
 [rdrview]: https://github.com/eafer/rdrview
 [python lxml module]: https://lxml.de
-[imagemagick]: https://imagemagick.org/
+[ImageMagick]: https://imagemagick.org/
 [Calibre]: https://calibre-ebook.com/
 [pandoc]: https://pandoc.org/
 
@@ -222,7 +222,7 @@ Basically one run-and-done tool for easy file uploads from the command line.
 
 Under the hood uses [wifi-tmp script] (found next to this one) via sudo
 to keep wifi link running (and enable usb port for it if [hwctl] is used),
-as well as common [fping]/[curl] tools, plus optionally [imagemagick]
+as well as common [fping]/[curl] tools, plus optionally [ImageMagick]
 (for sleep.bmp auto-rotation) and python [unidecode] module for better
 unicode-to-ascii filename transliteration (if it's available to import).
 
