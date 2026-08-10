@@ -69,7 +69,7 @@ def epub_html_img(ctx, e, p_base, fit='400x400', grayscale='rec709luma'):
 		'hif', 'avif', 'jxl', 'jpe', 'jpeg', 'jps', 'jif', 'jfif', 'jfi',
 		'svg', 'svgz', 'gif', 'webp', 'apng', 'bmp', 'tiff', 'tga' ) # see: magick -list format
 	fmt_mime = {'heif-sequence': 'heifs', 'heic-sequence': 'heics', 'svg+xml': 'svg'}
-	src_pre, sz_max = f'{href_base.schema}{href_base.host}/', 1 * 2**20 # G400x ~ 35K
+	src_pre, sz_max = f'{href_base.schema}{href_base.host}/', 500 * 2**10 # G400x ~ 35K
 
 	magick_bin = 'magick'
 	magick_idfmt = magick_bin, 'identify', '-format', '%m\n'
@@ -83,7 +83,6 @@ def epub_html_img(ctx, e, p_base, fit='400x400', grayscale='rec709luma'):
 
 	if m := re.fullmatch(r'(?i)data:image/([-\w+]+);base64,(.*)', url):
 		data, fmt = m[2], fmt_mime.get(fmt := m[1].lower()) or fmt
-		if len(data) > sz_max * 1.2: raise ImgProcErr(f'Size too large (>{sz_max:,d}B)')
 		dec = base64.urlsafe_b64decode if re.search(r'[-+]', data) else base64.standard_b64decode
 		tmp = ctx.enter_context( tempfile
 			.NamedTemporaryFile(prefix='xteink.html2epub.', suffix=f'.{fmt}') )
@@ -110,6 +109,7 @@ def epub_html_img(ctx, e, p_base, fit='400x400', grayscale='rec709luma'):
 		proc.kill(); proc.wait(); raise ImgProcErr(f'Size too large (>{sz_max:,d}B)')
 	if proc.wait(timeout=1): raise ImgProcErr(f'magick-convert falied [ {p} ]')
 	return adict(name=name, fmt=fmt, tag=tag, png=png)
+
 
 def epub_html_wrap(title, body, img_proc):
 	doc = lxhtml.fragment_fromstring(body, lxhtml.HTMLParser())
@@ -146,6 +146,7 @@ def epub_html_wrap(title, body, img_proc):
 		<body>''') + f'\n{body}\n</body>\n</html>'
 	# lx.fromstring(doc, lxhtml.HTMLParser(recover=False))
 	return doc, list(img_map.values())
+
 
 def html_to_epub(title, doc, img_list, pp=None):
 	'Creates epub container with xml boilerplate around html in there'
