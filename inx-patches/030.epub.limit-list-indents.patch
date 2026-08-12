@@ -1,0 +1,32 @@
+In EPUB HTML rendering, shrinks indents of list items, as well as limiting total indent size of these.
+Idea is so that actual text doesn't get squeezed-out into tiny column on the right by nested lists,
+and to workaround occasional bug with those indents left over after lists end.
+See also https://github.com/obijuankenobiii/inx/issues/119
+
+diff --git a/lib/Epub/Epub/ParsedText.cpp b/lib/Epub/Epub/ParsedText.cpp
+index 0947f62..99819cf 100644
+--- a/lib/Epub/Epub/ParsedText.cpp
++++ b/lib/Epub/Epub/ParsedText.cpp
+@@ -569,6 +569,9 @@ void ParsedText::applyParagraphIndent(const GfxRenderer& renderer, const int fon
+     leftIndentWidth = static_cast<uint16_t>(std::min(std::max(emWidth, fallbackWidth), 65535));
+     leftIndentLineCount = 1;
+   }
++
++  // XXX: limit all indents to harmless 60px to avoid nested lists limiting screen space
++  leftIndentWidth = std::min(leftIndentWidth, static_cast<uint16_t>(60));
+ }
+ 
+ std::vector<size_t> ParsedText::computeHyphenatedLineBreaks(const GfxRenderer& renderer, const int fontId,
+diff --git a/lib/Epub/Epub/parsers/ChapterHtmlSlimParser.cpp b/lib/Epub/Epub/parsers/ChapterHtmlSlimParser.cpp
+index a77af6e..ae37977 100644
+--- a/lib/Epub/Epub/parsers/ChapterHtmlSlimParser.cpp
++++ b/lib/Epub/Epub/parsers/ChapterHtmlSlimParser.cpp
+@@ -1903,7 +1903,7 @@ void XMLCALL ChapterHtmlSlimParser::startElement(void* userData, const XML_Char*
+           // (the current margin), then push every line of the item - first line included - in by the marker's
+           // width, so the marker floats in that reclaimed space to the left of text that's uniformly indented.
+           self->pendingListMarkerX_ = static_cast<int16_t>(self->activeBlockContentX());
+-          self->listMarkerIndentPx_ = std::max(1, self->renderer.text.getLineHeight(self->activeBlockFontId()));
++          self->listMarkerIndentPx_ = std::max(1, self->renderer.text.getLineHeight(self->activeBlockFontId()) / 2);
+           self->currentCssInsetLeftPx += self->listMarkerIndentPx_;
+           self->captureCurrentTextBlockBox();
+         }

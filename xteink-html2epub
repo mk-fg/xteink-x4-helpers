@@ -86,10 +86,10 @@ def epub_html_img(ctx, src, srcset, img_proc):
 		dec = base64.urlsafe_b64decode if re.search(r'[-+]', data) else base64.standard_b64decode
 		tmp = ctx.enter_context( tempfile
 			.NamedTemporaryFile(prefix='xteink.html2epub.', suffix=f'.{fmt}') )
-		tmp.write(dec(data)); tmp.flush(); del data, url
+		tmp.write(dec(data)); tmp.flush(); del m, data, url, src, srcset # large mem chunks
 		p, name = pl.Path(tmp.name), 'img'
 
-	else: # check if it's an accessible file, test/convert via imagemagick
+	else: # check file and format via imagemagick
 		if url.startswith(src_pre):
 			url = url[len(src_pre):].removeprefix(f'{href_base.path}/')
 			p = img_proc.p / f'./{url}'
