@@ -2,7 +2,7 @@
 
 import pathlib as pl, subprocess as sp, contextlib as cl, hashlib as hl
 import datetime as dt, collections as cs, textwrap as tw, zipfile as z
-import os, sys, re, io, html, tempfile, uuid, base64
+import os, sys, re, io, html, tempfile, uuid, base64, urllib.parse as up
 
 import lxml.html as lxhtml, lxml.etree as lx # https://lxml.de/
 
@@ -73,8 +73,7 @@ def epub_html_img(ctx, src, srcset, img_proc):
 
 	magick_bin = 'magick'
 	magick_idfmt = magick_bin, 'identify', '-format', '%m\n'
-	magick_conv = lambda p: ( magick_bin,
-		f'{p}[0]', '-scale', img_proc.fit, '-grayscale', img_proc.gray, 'png:-' )
+	magick_conv = lambda p: (magick_bin, f'{p}[0]', *img_proc.opts, 'png:-')
 
 	if not (url := src) and (url := srcset):
 		url = list(s.strip().split(None, 1)[0] for s in src.split(',') if s)
@@ -291,12 +290,14 @@ def main(args=None):
 	group = parser.add_argument_group('Image processing')
 	group.add_argument('--img-strip', action='store_true',
 		help='Remove all images instead of any kind of processing.')
-	group.add_argument('--img-gray', metavar='method', default='rec601luma', help=dd('''
-		ImageMagick "intensity" formula for converting image to grayscale. Default: %(default)s
-		See https://imagemagick.org/command-line-options/#intensity for list/descriptions.'''))
-	group.add_argument('--img-fit', metavar='size', default='400x700>', help=dd('''
-		ImageMagick -scale spec for images. Default: %(default)s (shrink to fit)
-		See https://imagemagick.org/command-line-processing/#geometry for details.'''))
+	group.add_argument('--img-proc', metavar='opts', help=dd('''
+			ImageMagick image-processing options for all images that are packed in epub file.
+			Options are space-separated, don't need shell-quoting,
+				but can include URL-escapes for spaces (%%20) or other characters,
+				with extra %%%%-escapes supported in %%<2hexdigits> places (e.g. %%%%12 -> %%12).
+			See https://imagemagick.org/command-line-options/ on each one for more details.
+			Default: %(default)s'''),
+		default='-scale 400x700> -grayscale rec601luma -brightness-contrast -20x50 -sharpen 1')
 
 	group = parser.add_argument_group('Console outputs')
 	group.add_argument('-q', '--quiet', action='store_true', help='Suppress normal output.')
@@ -324,6 +325,8 @@ def main(args=None):
 		if p_dst: parser.error('-o/--out-file and -O/--out-dir options are mutually exclusive')
 		if not (p_dst_dir := pl.Path(p_dst_dir)).is_dir():
 			parser.error('-O/--out-dir is missing/bogus/inaccessible')
+	img_proc = tuple(up.unquote(re.sub(
+		r'%%([0-9A-Fa-f]{2})', r'%25\1', opt )) for opt in opts.img_proc.split())
 
 	rdrview_bin = 'rdrview'
 	rdrview_meta = rdrview_bin, '--meta',
@@ -364,8 +367,8 @@ def main(args=None):
 	for fx in files:
 		fx.title = fx.meta.get('title') or fx.meta.get('excerpt') or fx.p.stem
 		html, img_list = epub_html_wrap( fx.title, fx.body,
-			img_proc=not opts.img_strip and adict( pr_err=pr_err,
-				p=fx.p.resolve().parent, gray=opts.img_gray, fit=opts.img_fit ))
+			img_proc=not opts.img_strip and adict(
+				pr_err=pr_err, p=fx.p.resolve().parent, opts=img_proc ) )
 		fx.epub = html_to_epub( fx.title, html,
 			img_list, pp=adict((k, pp[k][fx.n]) for k in pp) )
 
