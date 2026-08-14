@@ -113,6 +113,8 @@ def epub_html_img(ctx, src, srcset, img_proc):
 
 def epub_html_wrap(title, body, img_proc):
 	doc = lxhtml.fragment_fromstring(body, lxhtml.HTMLParser())
+
+	## Fix html elements that don't work in simplistic HtmlSlimParser on eReader
 	for pre in doc.xpath('//pre|//code'): # reader app drops these - convert to <p>/<br>
 		p = '<br />'.join(html.escape(line) for line in pre.text_content().splitlines())
 		p = lxhtml.fragment_fromstring(f'<p>{p}</p>')
@@ -123,6 +125,7 @@ def epub_html_wrap(title, body, img_proc):
 	# Non-image media isn't needed, can have massive data-urls from SingleFile
 	for e in doc.xpath('//video|//audio|//source'): e.drop_tree()
 
+	## Normalize img tags and images in those
 	img_map = dict()
 	for e in doc.xpath('//img'): # image srcs get normalized/deduped, added to epub zip
 		if not img_proc: e.drop_tree(); continue
@@ -137,9 +140,9 @@ def epub_html_wrap(title, body, img_proc):
 			img2 = img_map[img.tag] = img
 			(fn := img.name).lower().endswith('.png') and (fn := fn[:-4])
 			img2.fn = f'{fn}.{img.tag}.png'
-		e.attrib.pop('srcset', None); e.attrib['src'] = img2.fn
+		e.attrib.clear(); e.attrib['src'] = img2.fn
 
-	# lxml will output broken XML that it itself won't validate anyway
+	# Despite method=xml here, lxml will easily output broken XML it itself won't validate
 	body = lx.tostring(doc, method='xml', encoding='unicode', pretty_print=True)
 	doc = dd(f'''
 		<?xml version="1.0" encoding="utf-8"?>
