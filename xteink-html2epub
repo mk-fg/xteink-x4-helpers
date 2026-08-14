@@ -135,7 +135,8 @@ def epub_html_wrap(title, body, img_proc):
 		if not img: e.drop_tree(); continue
 		if not (img2 := img_map.get(img.tag)):
 			img2 = img_map[img.tag] = img
-			img2.fn = f'{img.name}.{img.tag}.png'
+			(fn := img.name).lower().endswith('.png') and (fn := fn[:-4])
+			img2.fn = f'{fn}.{img.tag}.png'
 		e.attrib.pop('srcset', None); e.attrib['src'] = img2.fn
 
 	# lxml will output broken XML that it itself won't validate anyway
