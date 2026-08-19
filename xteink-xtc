@@ -18,12 +18,14 @@ def attrs(o, **attrs):
 	for k, v in attrs.items(): setattr(o, k, v)
 	return o
 
+os.umask(file_repl_umask := os.umask(0))
 @cl.contextmanager
 def file_replacement(p):
 	with tempfile.NamedTemporaryFile( mode='wb', delete=False,
 			dir=(p := pl.Path(p)).parent, prefix=f'{p.name}.' ) as tmp:
 		tmp.file_path, tmp.commit = p, False
 		try:
+			os.chmod(tmp.name, 0o666 & ~file_repl_umask)
 			yield tmp
 			if not tmp.commit: return
 			if not tmp.closed: tmp.flush()
