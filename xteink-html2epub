@@ -284,12 +284,24 @@ def main(args=None):
 	group.add_argument('html_files', nargs='+', help=dd('''
 		HTML file(s) to convert. Always processed by rdrview tool first to normalize contents.
 		Output epub files are generated next to those, replacing filename extension with .epub'''))
-	group.add_argument('-o', '--out-file', metavar='file', help=dd(f'''
+	group.add_argument('-o', '--out-file', metavar='file', help=dd('''
 		Output filename to use instead of putting .epub files next to source HTML ones.
 		Only allowed with a single input file.'''))
-	group.add_argument('-O', '--out-dir', metavar='dir', help=dd(f'''
+	group.add_argument('-O', '--out-dir', metavar='dir', help=dd('''
 		Directory to put output file(s) to, under same filename(s) derived from source files.
 		Must be an existing dir, will NOT be created automatically. Filenames must not conflict.'''))
+
+	group = parser.add_argument_group('Text processing options')
+	group.add_argument('-r', '--relaxed', action='store_true', help=dd('''
+		Disable some rdrview tool content-processing heuristics, leaving more elements
+			in resulting main HTML document body, which can be useful if it removes too much.
+		Requires rdrview supporting --disable-heuristic option,
+			see https://github.com/eafer/rdrview/pull/49 for status on that.
+		It's same diff as sanity-checks default-detect when pandoc is available.'''))
+	group.add_argument('-C', '--no-checks', action='store_true', help=dd('''
+		Disable optional/opportunistic sanity-checks on resulting HTML.
+		These are currently only performed if rdrview supports --disable-heuristic
+			option and "pandoc" tool/binary available via PATH, auto-disabled otherwise.'''))
 
 	group = parser.add_argument_group('Image processing')
 	group.add_argument('--img-strip', action='store_true',
@@ -309,11 +321,6 @@ def main(args=None):
 		Print specific HTML processing stage to stdout for Nth file (default is 1 - first one).
 		Should be in "type[:n]" format, with "type" being one of: {' '.join(print_types)}
 		Intended to check what went wrong during processing.'''))
-	group.add_argument('-C', '--no-checks', action='store_true', help=dd(f'''
-		Disable optional/opportunistic sanity-checks on resulting HTML.
-		These are currently only performed if rdrview supports --disable-heuristic
-			option and "pandoc" tool/binary available via PATH, auto-disabled otherwise.
-		See https://github.com/eafer/rdrview/pull/49 for that required option.'''))
 
 	opts = parser.parse_args(sys.argv[1:] if args is None else args)
 
@@ -341,15 +348,16 @@ def main(args=None):
 	rdrview_meta = rdrview_bin, '--meta',
 	rdrview_conv = ( rdrview_bin, '--html', '--base',
 		f'{href_base.schema}{href_base.host}/{href_base.path}/' )
+	rdrview_opts_relaxed = '--disable-heuristic', 'unlikely'
+	if opts.relaxed: rdrview_conv += rdrview_opts_relaxed
 
-	# Sanity-check runs relaxed rdrview + pandoc/diff to show plaintext changes (if any)
-	if ( rdrview_check := not opts.no_checks and
+	if ( rdrview_check := not (opts.relaxed or opts.no_checks) and
 			'[proc-flags]' in sp.run([rdrview_bin, '-h'], stderr=sp.PIPE).stderr.decode() ):
-		try: list(sp.run([cmd, '--version'], stdout=sp.DEVNULL) for cmd in ('pandoc', 'diff'))
+		try: sp.run(['pandoc', '--version'], stdout=sp.DEVNULL)
 		except FileNotFoundError: rdrview_check = pr_out(
-			'WARN: Disabling rdrview-html sanity-checks due to missing pandoc/diff tools' )
-		else: rdrview_check = rdrview_conv + ('--disable-heuristic', 'unlikely')
-		pandoc_conv, diff_cmd = ('pandoc', '--quiet', '--from=html', '--to=plain'), ('diff', '-iwU2')
+			'WARN: Disabling rdrview-html sanity-checks due to missing pandoc tool' )
+		else: rdrview_check, pandoc_conv = ( rdrview_conv +
+			rdrview_opts_relaxed, ('pandoc', '--quiet', '--from=html', '--to=plain') )
 
 	files, p_epub_conflicts = list(), cs.defaultdict(list)
 	for n, p in enumerate(map(pl.Path, opts.html_files), 1):
