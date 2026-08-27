@@ -309,6 +309,11 @@ def main(args=None):
 		Print specific HTML processing stage to stdout for Nth file (default is 1 - first one).
 		Should be in "type[:n]" format, with "type" being one of: {' '.join(print_types)}
 		Intended to check what went wrong during processing.'''))
+	group.add_argument('-C', '--no-checks', action='store_true', help=dd(f'''
+		Disable optional/opportunistic sanity-checks on resulting HTML.
+		These are currently only performed if rdrview supports --disable-heuristic
+			option and "pandoc" tool/binary available via PATH, auto-disabled otherwise.
+		See https://github.com/eafer/rdrview/pull/49 for that required option.'''))
 
 	opts = parser.parse_args(sys.argv[1:] if args is None else args)
 
@@ -337,10 +342,20 @@ def main(args=None):
 	rdrview_conv = ( rdrview_bin, '--html', '--base',
 		f'{href_base.schema}{href_base.host}/{href_base.path}/' )
 
+	# Sanity-check runs relaxed rdrview + pandoc/diff to show plaintext changes (if any)
+	if ( rdrview_check := not opts.no_checks and
+			'[proc-flags]' in sp.run([rdrview_bin, '-h'], stderr=sp.PIPE).stderr.decode() ):
+		try: list(sp.run([cmd, '--version'], stdout=sp.DEVNULL) for cmd in ('pandoc', 'diff'))
+		except FileNotFoundError: rdrview_check = pr_out(
+			'WARN: Disabling rdrview-html sanity-checks due to missing pandoc/diff tools' )
+		else: rdrview_check = rdrview_conv + ('--disable-heuristic', 'unlikely')
+		pandoc_conv, diff_cmd = ('pandoc', '--quiet', '--from=html', '--to=plain'), ('diff', '-iwU2')
+
 	files, p_epub_conflicts = list(), cs.defaultdict(list)
 	for n, p in enumerate(map(pl.Path, opts.html_files), 1):
 		if not p.is_file(): parser.error(f'Input file is missing/bogus/inaccessible: {p}')
 		if pr := pp.input[n]: pr(p.read_text().strip())
+
 		proc = sp.run([*rdrview_meta, '--', p], stdout=sp.PIPE, check=True)
 		meta, key = adict(), None
 		for line in proc.stdout.decode().splitlines():
@@ -350,9 +365,21 @@ def main(args=None):
 			elif key and (m := re.fullmatch(r'\s+(.*)', line)): meta[key] += f' {m[1]}'
 		if meta.get('readerable', '').lower() != 'yes':
 			parser.error(f'ERROR: rdrview failed to process file: {p}')
+
 		proc = sp.run([*rdrview_conv, '--', p], stdout=sp.PIPE, check=True)
 		body = proc.stdout.decode()
 		if pr := pp.body[n]: pr(body.strip())
+
+		if rdrview_check:
+			proc = sp.run([*rdrview_check, '--', p], stdout=sp.PIPE, check=True)
+			if (body_chk := proc.stdout.decode()) != body:
+				import difflib; txt_base, txt_relax = (
+					sp.run(pandoc_conv, input=html.encode(), stdout=sp.PIPE, check=True)
+					.stdout.decode().strip().split('\n') for html in (body, body_chk) )
+				if diff := list(difflib.unified_diff(txt_relax, txt_base, n=2)):
+					pr_out(f'SANITY-CHECK: rdrview diffs for base/relaxed run-modes in [ {p} ]')
+					for line in diff[3:]: pr_out(f'  {line.rstrip()}')
+
 		if p_dst: p_epub = p_dst
 		else:
 			p_epub = p.parent / ((p.stem if len(p.suffix) <= 7 else p.name) + '.epub')

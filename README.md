@@ -118,11 +118,17 @@ Script to convert any stored [reader-mode]-friendly webpage/[HTML file]
 (basically same HTML in [.zip archive]), fixing or discarding anything that
 might negatively impact readability on eReader firmwares.
 
-Uses/requires [rdrview] tool to find/extract and simplify text from HTML,
-[python lxml module] to further process resulting HTML text-body to fix various
-issues with HtmlSlimParser used by CrossPoint firmware forks on Xteink devices
-(listed at the end of `-h/--help` output), and [ImageMagick] "magick" cli tool
-to process images for `<img ...>` tags (convert/downscale/grayscale), if any.
+Uses a bunch of tools, some are optional:
+
+- [rdrview] to find/extract and simplify text contents from HTML.
+- [python lxml module] to further process resulting HTML text-body to fix various
+  issues with HtmlSlimParser used by CrossPoint firmware forks on Xteink devices
+  (listed at the end of `-h/--help` output).
+- (optional) [ImageMagick] "magick" cli tool to process images for `<img ...>` tags
+  (convert/downscale/grayscale), if there are any, and without `--img-strip` option.
+- (opportunistic) [pandoc] tool if rdrview is has `--disable-heuristic` option
+  (see [rdrview PR#49] for that), to check if any removed tags within contents-block
+  end up translating to text, and print diff of those (unless `-C/--no-checks` is used).
 
 Intended to be used with [SingleFile]-saved pages, to make those readable as
 epub files, without cover images, splitting them into useless chapters (that tend
@@ -147,6 +153,7 @@ embeded images.
 [rdrview]: https://github.com/eafer/rdrview
 [python lxml module]: https://lxml.de
 [ImageMagick]: https://imagemagick.org/
+[rdrview PR#49]: https://github.com/eafer/rdrview/pull/49
 [Calibre]: https://calibre-ebook.com/
 [pandoc]: https://pandoc.org/
 
