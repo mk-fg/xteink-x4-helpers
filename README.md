@@ -126,7 +126,7 @@ Uses a bunch of tools, some are optional:
   (listed at the end of `-h/--help` output).
 - (optional) [ImageMagick] "magick" cli tool to process images for `<img ...>` tags
   (convert/downscale/grayscale), if there are any, and without `--img-strip` option.
-- (opportunistic) [pandoc] tool if rdrview is has `--disable-heuristic` option
+- (opportunistic) [pandoc] tool if rdrview has `--disable-heuristic` option
   (see [rdrview PR#49] for that), to check if any removed tags within contents-block
   end up translating to text, and print diff of those (unless `-C/--no-checks` is used).
 
