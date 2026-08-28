@@ -252,23 +252,25 @@ def main(args=None):
 	parser = argparse.ArgumentParser(
 		usage='%(prog)s [options] file.html ...',
 		formatter_class=argparse.RawTextHelpFormatter, description=dd('''
-			Converts HTML files to simple epub files, without chapters,
+			Converts HTML files to simple epub files into current dir, without chapters,
 				styling, complicated tags and similar crap, optimized for simple eink devices,
 				where all that crap makes these files unreadable or crashes their reader apps,
 				targeting Xteink X4 eReader firmwares in particular.
 			Uses https://github.com/eafer/rdrview tool to strip-down/simplify html first,
 				then fixes couple html quirks that tend not to work/render in reader apps,
 				and then puts epub wrapper around the file (zip container + META-INF + oebps).
-			Requires imagemagick command-line tools ("magick" command)
-				to check and convert any known image formats to downscaled grayscale PNGs.
+			Needs imagemagick command-line tools ("magick" command)
+				to check and convert any known image formats to downscaled grayscale PNGs,
+				unless there aren't any, or those are removed with --img-strip option.
 			Works offline, does not fetch anything (rdrview shouldn't either),
-				but can load/pack images from local files relative to html file.'''),
+				but can load/pack linked images from local files relative to html file.'''),
 		epilog=dd('''
 			Resulting EPUB structure should be:
 			 - Title from either page title or excerpt, as extracted by rdrview --meta.
 			 - No cover image, random urn:uuid:... for book ID, current date/time, no other metadata.
 			 - EPUB 2 toc.ncx and EPUB 3 nav.xhtml, both with single chapter, using same doc title.
 			 - Full rdrview HTML-text extract for single-chapter body, with xml/html/xhtml headers.
+					With -r/--relaxed option, rdrview is run with --disable-heuristic=unlikely.
 			 - Images for <img ...> tags are extracted from data-URLs or loaded via relative urls,
 					then imagemagick-downscaled/converted for resulting epub, if found/recognized.
 					Non-src attributes on <img ...> tags get stripped to disable
@@ -288,8 +290,10 @@ def main(args=None):
 		Output filename to use instead of putting .epub files next to source HTML ones.
 		Only allowed with a single input file.'''))
 	group.add_argument('-O', '--out-dir', metavar='dir', help=dd('''
-		Directory to put output file(s) to, under same filename(s) derived from source files.
-		Must be an existing dir, will NOT be created automatically. Filenames must not conflict.'''))
+		Directory to put output file(s) to, under filename(s) like in source files, with .epub suffix.
+		Must be an existing dir, won't be created automatically. Default: current dir.
+		Any conflicting filenames will print error and cancel the process.
+		Empty value or "-" (hyphen) will put .epub files next to specified source htmls.'''))
 
 	group = parser.add_argument_group('Text processing options')
 	group.add_argument('-r', '--relaxed', action='store_true', help=dd('''
@@ -335,14 +339,17 @@ def main(args=None):
 		pt, pn = (opts.print.split(':', 1) + [1])[:2]
 		if pt not in print_types: parser.error(f'Unrecognized -p/--print value: {opts.print}')
 		pp[pt.lower().replace(*'-_')][int(pn)] = pr_out_nq
+	img_proc = tuple(up.unquote(re.sub(
+		r'%%([0-9A-Fa-f]{2})', r'%25\1', opt )) for opt in opts.img_proc.split())
+
 	if (p_dst := opts.out_file) and len(opts.html_files) > 1:
 		parser.error('-o/--out-file option is only allowed with single input file')
-	if p_dst_dir := opts.out_dir:
+	if (p_dst_dir := opts.out_dir) is None and not p_dst: p_dst_dir = '.' # "current dir" default
+	elif p_dst_dir == '-': p_dst_dir = '' # special -O- to use source file dirs
+	if p_dst_dir:
 		if p_dst: parser.error('-o/--out-file and -O/--out-dir options are mutually exclusive')
 		if not (p_dst_dir := pl.Path(p_dst_dir)).is_dir():
 			parser.error('-O/--out-dir is missing/bogus/inaccessible')
-	img_proc = tuple(up.unquote(re.sub(
-		r'%%([0-9A-Fa-f]{2})', r'%25\1', opt )) for opt in opts.img_proc.split())
 
 	rdrview_bin = 'rdrview'
 	rdrview_meta = rdrview_bin, '--meta',
@@ -385,7 +392,7 @@ def main(args=None):
 					sp.run(pandoc_conv, input=html.encode(), stdout=sp.PIPE, check=True)
 					.stdout.decode().strip().split('\n') for html in (body, body_chk) )
 				if diff := list(difflib.unified_diff(txt_relax, txt_base, n=2)):
-					pr_out(f'SANITY-CHECK: rdrview diffs for base/relaxed run-modes in [ {p} ]')
+					pr_out(f'SANITY-CHECK: rdrview diffs for base/relaxed run-modes in [ {p.name} ]')
 					for line in diff[3:]: pr_out(f'  {line.rstrip()}')
 
 		if p_dst: p_epub = p_dst
