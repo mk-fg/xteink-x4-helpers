@@ -327,7 +327,7 @@ def main(args=None):
 	group.add_argument('-O', '--out-dir', metavar='dir', help=dd('''
 		Directory to put output file(s) to, under filename(s) like in source files, with .epub suffix.
 		Must be an existing dir, won't be created automatically. Default: current dir.
-		Any conflicting filenames will print error and cancel the process.
+		Any conflicting output paths between inputs will print error and cancel the process.
 		Empty value or "-" (hyphen) will put .epub files next to specified source htmls.'''))
 
 	group = parser.add_argument_group('Text processing options')
@@ -392,7 +392,7 @@ def main(args=None):
 	pandoc = adict(bin=['pandoc', '--sandbox=true'])
 	if rdrview := not opts.ph:
 		rdrview = adict(bin=['rdrview'])
-		rdrview.meta = *rdrview.bin, '--meta',
+		rdrview.meta = *rdrview.bin, '--meta'
 		rdrview.conv = ( *rdrview.bin, '--html', '--base',
 			f'{href_base.schema}{href_base.host}/{href_base.path}/' )
 		rdrview_opts_relaxed = '--disable-heuristic', 'unlikely'
@@ -424,7 +424,7 @@ def main(args=None):
 
 	for p_epub, ps in p_epub_conflicts.items():
 		if len(ps) == 1: continue
-		pr_err(f'ERROR: Output filename conflict [ {p_epub} ] for source files:')
+		pr_err(f'ERROR: Output filename conflict [ {p_epub.name} ] for source files:')
 		for p in ps: pr_err(f'  {p}')
 		p_epub_conflicts = None
 	if not p_epub_conflicts: return 1
@@ -432,8 +432,8 @@ def main(args=None):
 	for fx in files:
 		fx.title = fx.meta.get('title') or fx.meta.get('excerpt') or fx.p.stem
 		html, img_list = epub_html_wrap( fx.title, fx.body,
-			img_proc=not opts.img_strip and adict(
-				pr_err=pr_err, p=fx.p.resolve().parent, opts=img_proc ) )
+			img_proc=not opts.img_strip and adict( p=fx.p.resolve().parent, opts=img_proc,
+				pr_err=lambda msg: pr_err(msg + f' -- in [ {fx.p.name} ]'*(len(files) > 1)) ) )
 		fx.epub = html_to_epub( fx.title, html,
 			img_list, pp=adict((k, pp[k][fx.n]) for k in pp) )
 

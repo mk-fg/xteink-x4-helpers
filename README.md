@@ -120,7 +120,8 @@ might negatively impact readability on eReader firmwares.
 
 Uses a bunch of tools, some are optional:
 
-- [rdrview] to find/extract and simplify text contents from HTML.
+- [rdrview] to find/extract and simplify text contents from HTML.\
+  Can be optional if `--ph/--pandoc-html` option is used instead.
 
 - [python lxml module] to further process resulting HTML text-body to fix various
   issues with HtmlSlimParser used by CrossPoint firmware forks on Xteink devices
@@ -131,7 +132,7 @@ Uses a bunch of tools, some are optional:
 
 - (optional) [pandoc] tool if `--ph/--pandoc-html` option is used, or opportunistically
   (if available) when rdrview has `--disable-heuristic` option (see [rdrview PR#49] for that)
-  and `-C/--no-checks` script option isn't used.
+  and without `-C/--no-checks` script flag.
 
 Intended to be used with [SingleFile]-saved pages, to make those readable as
 epub files, without cover images, splitting them into useless chapters (that tend
@@ -144,8 +145,8 @@ so more faithful conversion process is, the worse result tends to get for these.
 
 Has alternative pandoc round-trip-processing mode (`--ph/--pandoc-html` option)
 for when rdrview can't detect text body (reported as fatal error by script),
-which tends to be more forgiving, but produces more noise in resulting EPUB.\
-("Annotate and save" in [SingleFile] can be useful to visually remove that in HTML)
+which tends to be more forgiving, but produces more noise in resulting EPUB
+("Annotate and save" in [SingleFile] can be useful to visually remove that in source HTML).
 
 [xteink-html2epub]: xteink-html2epub
 [reader-mode]:
