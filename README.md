@@ -121,14 +121,17 @@ might negatively impact readability on eReader firmwares.
 Uses a bunch of tools, some are optional:
 
 - [rdrview] to find/extract and simplify text contents from HTML.
+
 - [python lxml module] to further process resulting HTML text-body to fix various
   issues with HtmlSlimParser used by CrossPoint firmware forks on Xteink devices
   (listed at the end of `-h/--help` output).
+
 - (optional) [ImageMagick] "magick" cli tool to process images for `<img ...>` tags
   (convert/downscale/grayscale), if there are any, and without `--img-strip` option.
-- (opportunistic) [pandoc] tool if rdrview has `--disable-heuristic` option
-  (see [rdrview PR#49] for that), to check if any removed tags within contents-block
-  end up translating to text, and print diff of those (unless `-C/--no-checks` is used).
+
+- (optional) [pandoc] tool if `--ph/--pandoc-html` option is used, or opportunistically
+  (if available) when rdrview has `--disable-heuristic` option (see [rdrview PR#49] for that)
+  and `-C/--no-checks` script option isn't used.
 
 Intended to be used with [SingleFile]-saved pages, to make those readable as
 epub files, without cover images, splitting them into useless chapters (that tend
@@ -139,10 +142,10 @@ for roughly half of "properly" converted HTMLs (using e.g. [Calibre]).\
 Single web page isn't a book, and Xteink devices don't parse HTML correctly,
 so more faithful conversion process is, the worse result tends to get for these.
 
-Currently roughly same effect can be acheived by chaining [rdrview] and
-`pandoc -t plain ...` ([pandoc] document converter) tools, except epub file
-is compressed, preserves title, some basic header/bold/italic styling in text, lists,
-embeded images.
+Has alternative pandoc round-trip-processing mode (`--ph/--pandoc-html` option)
+for when rdrview can't detect text body (reported as fatal error by script),
+which tends to be more forgiving, but produces more noise in resulting EPUB.\
+("Annotate and save" in [SingleFile] can be useful to visually remove that in HTML)
 
 [xteink-html2epub]: xteink-html2epub
 [reader-mode]:

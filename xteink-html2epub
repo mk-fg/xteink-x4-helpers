@@ -246,6 +246,37 @@ def html_to_epub(title, doc, img_list, pp=None):
 	return epub.getvalue()
 
 
+def html_proc_rdrview(p, rdrview, pandoc, pr_out, pr_err):
+	proc = sp.run([*rdrview.meta, '--', p], stdout=sp.PIPE, check=True)
+	meta, key = adict(), None
+	for line in proc.stdout.decode().splitlines():
+		if not line.strip(): continue
+		elif m := re.fullmatch(r'(\w+):\s+(.*)', line):
+			meta[key := m[1].lower()] = m[2].strip()
+		elif key and (m := re.fullmatch(r'\s+(.*)', line)): meta[key] += f' {m[1]}'
+	if meta.get('readerable', '').lower() != 'yes': return pr_err(
+		f'ERROR: rdrview failed to process file (try --ph/--pandoc-html) [ {p} ]' )
+	proc = sp.run([*rdrview.conv, '--', p], stdout=sp.PIPE, check=True)
+	body = proc.stdout.decode()
+	if rdrview.check:
+		proc = sp.run([*rdrview.check, '--', p], stdout=sp.PIPE, check=True)
+		if (body_chk := proc.stdout.decode()) != body:
+			import difflib; txt_base, txt_relax = (
+				sp.run(pandoc.plain, input=html.encode(), stdout=sp.PIPE, check=True)
+				.stdout.decode().strip().split('\n') for html in (body, body_chk) )
+			if diff := list(difflib.unified_diff(txt_relax, txt_base, n=2)):
+				pr_out(f'SANITY-CHECK: rdrview diffs for base/relaxed run-modes in [ {p.name} ]')
+				for line in diff[3:]: pr_out(f'  {line.rstrip()}')
+	return body, meta
+
+def html_proc_pandoc(p, pandoc):
+	proc = sp.run([ *pandoc.bin, '--wrap=preserve',
+		'--from=html', '--to=gfm-raw_html', '--', p ], stdout=sp.PIPE, check=True)
+	proc = sp.run([ *pandoc.bin, '--embed-resources=true',
+		'--from=gfm', '--to=html' ], input=proc.stdout, stdout=sp.PIPE, check=True)
+	return proc.stdout.decode(), adict()
+
+
 def main(args=None):
 	print_types = 'input body xhtml xml opf ncx nav'.split()
 
@@ -263,8 +294,9 @@ def main(args=None):
 			Needs imagemagick command-line tools ("magick" command)
 				to check and convert any known image formats to downscaled grayscale PNGs,
 				unless there aren't any, or those are removed with --img-strip option.
-			Works offline, does not fetch anything (rdrview shouldn't either),
-				but can load/pack linked images from local files relative to html file.'''),
+			Works offline, does not fetch anything (rdrview/pandoc/magick shouldn't either),
+				but can load/pack linked images from local files relative to html file,
+				and imagemagick can run "delegate" tools for e.g. SVG (see "magick -list delegate").'''),
 		epilog=dd('''
 			Resulting EPUB structure should be:
 			 - Title from either page title or excerpt, as extracted by rdrview --meta.
@@ -272,6 +304,8 @@ def main(args=None):
 			 - EPUB 2 toc.ncx and EPUB 3 nav.xhtml, both with single chapter, using same doc title.
 			 - Full rdrview HTML-text extract for single-chapter body, with xml/html/xhtml headers.
 					With -r/--relaxed option, rdrview is run with --disable-heuristic=unlikely.
+					Alternative --ph/--pandoc-html option allows to round-trip-process HTML to markdown and
+						back to HTML, keeping only structure and text that way, useful in case rdrview fails.
 			 - Images for <img ...> tags are extracted from data-URLs or loaded via relative urls,
 					then imagemagick-downscaled/converted for resulting epub, if found/recognized.
 					Non-src attributes on <img ...> tags get stripped to disable
@@ -303,6 +337,9 @@ def main(args=None):
 		Requires rdrview supporting --disable-heuristic option,
 			see https://github.com/eafer/rdrview/pull/49 for status on that.
 		It's same diff as sanity-checks default-detect when pandoc is available.'''))
+	group.add_argument('--ph', '--pandoc-html', action='store_true', help=dd('''
+		Use alternative source HTML processing with pandoc instead of rdrview tool.
+		Converts HTML to markdown and back, leaving only structure, text and images.'''))
 	group.add_argument('-C', '--no-checks', action='store_true', help=dd('''
 		Disable optional/opportunistic sanity-checks on resulting HTML.
 		These are currently only performed if rdrview supports --disable-heuristic
@@ -352,50 +389,31 @@ def main(args=None):
 		if not (p_dst_dir := pl.Path(p_dst_dir)).is_dir():
 			parser.error('-O/--out-dir is missing/bogus/inaccessible')
 
-	rdrview_bin = 'rdrview'
-	rdrview_meta = rdrview_bin, '--meta',
-	rdrview_conv = ( rdrview_bin, '--html', '--base',
-		f'{href_base.schema}{href_base.host}/{href_base.path}/' )
-	rdrview_opts_relaxed = '--disable-heuristic', 'unlikely'
-	if opts.relaxed: rdrview_conv += rdrview_opts_relaxed
-
-	if ( rdrview_check := not (opts.relaxed or opts.no_checks) and
-			'[proc-flags]' in sp.run([rdrview_bin, '-h'], stderr=sp.PIPE).stderr.decode() ):
-		try: sp.run(['pandoc', '--version'], stdout=sp.DEVNULL)
-		except FileNotFoundError: rdrview_check = pr_out(
-			'WARN: Disabling rdrview-html sanity-checks due to missing pandoc tool' )
-		else: rdrview_check, pandoc_conv = ( rdrview_conv +
-			rdrview_opts_relaxed, ('pandoc', '--quiet', '--from=html', '--to=plain') )
+	pandoc = adict(bin=['pandoc', '--sandbox=true'])
+	if rdrview := not opts.ph:
+		rdrview = adict(bin=['rdrview'])
+		rdrview.meta = *rdrview.bin, '--meta',
+		rdrview.conv = ( *rdrview.bin, '--html', '--base',
+			f'{href_base.schema}{href_base.host}/{href_base.path}/' )
+		rdrview_opts_relaxed = '--disable-heuristic', 'unlikely'
+		if opts.relaxed: rdrview.conv += rdrview_opts_relaxed
+		rdrview.check = ( not (opts.relaxed or opts.no_checks) and
+			'[proc-flags]' in sp.run([*rdrview.bin, '-h'], stderr=sp.PIPE).stderr.decode() )
+		if rdrview.check:
+			try: sp.run(['pandoc', '--version'], stdout=sp.DEVNULL)
+			except FileNotFoundError: rdrview_check = pr_out(
+				'WARN: Disabling rdrview-html sanity-checks due to missing pandoc tool' )
+			else:
+				rdrview.check = rdrview.conv + rdrview_opts_relaxed
+				pandoc.plain = *pandoc.bin, '--quiet', '--from=html', '--to=plain'
 
 	files, p_epub_conflicts = list(), cs.defaultdict(list)
 	for n, p in enumerate(map(pl.Path, opts.html_files), 1):
 		if not p.is_file(): parser.error(f'Input file is missing/bogus/inaccessible: {p}')
 		if pr := pp.input[n]: pr(p.read_text().strip())
-
-		proc = sp.run([*rdrview_meta, '--', p], stdout=sp.PIPE, check=True)
-		meta, key = adict(), None
-		for line in proc.stdout.decode().splitlines():
-			if not line.strip(): continue
-			elif m := re.fullmatch(r'(\w+):\s+(.*)', line):
-				meta[key := m[1].lower()] = m[2].strip()
-			elif key and (m := re.fullmatch(r'\s+(.*)', line)): meta[key] += f' {m[1]}'
-		if meta.get('readerable', '').lower() != 'yes':
-			parser.error(f'ERROR: rdrview failed to process file: {p}')
-
-		proc = sp.run([*rdrview_conv, '--', p], stdout=sp.PIPE, check=True)
-		body = proc.stdout.decode()
+		body, meta = ( html_proc_pandoc(p, pandoc) if not rdrview
+			else html_proc_rdrview(p, rdrview, pandoc, pr_out, parser.error) )
 		if pr := pp.body[n]: pr(body.strip())
-
-		if rdrview_check:
-			proc = sp.run([*rdrview_check, '--', p], stdout=sp.PIPE, check=True)
-			if (body_chk := proc.stdout.decode()) != body:
-				import difflib; txt_base, txt_relax = (
-					sp.run(pandoc_conv, input=html.encode(), stdout=sp.PIPE, check=True)
-					.stdout.decode().strip().split('\n') for html in (body, body_chk) )
-				if diff := list(difflib.unified_diff(txt_relax, txt_base, n=2)):
-					pr_out(f'SANITY-CHECK: rdrview diffs for base/relaxed run-modes in [ {p.name} ]')
-					for line in diff[3:]: pr_out(f'  {line.rstrip()}')
-
 		if p_dst: p_epub = p_dst
 		else:
 			p_epub = p.parent / ((p.stem if len(p.suffix) <= 7 else p.name) + '.epub')
