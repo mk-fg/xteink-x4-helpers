@@ -113,7 +113,7 @@ def epub_html_img(ctx, src, srcset, img_proc):
 	return adict(name=name, fmt=fmt, tag=tag, png=png)
 
 
-def epub_html_wrap(title, body, img_proc):
+def epub_html_wrap(body, meta, no_hdr=False, img_proc=None):
 	doc = lxhtml.fragment_fromstring(body, lxhtml.HTMLParser())
 
 	## Fix html elements that don't work in simplistic HtmlSlimParser on eReader
@@ -145,14 +145,19 @@ def epub_html_wrap(title, body, img_proc):
 		e.attrib.clear(); e.attrib['src'] = img2.fn
 
 	# Despite method=xml here, lxml will easily output broken XML it itself won't validate
-	body = lx.tostring(doc, method='xml', encoding='unicode', pretty_print=True)
+	hdr, body = '', lx.tostring(doc, method='xml', encoding='unicode', pretty_print=True)
+	for k, pre, tag in list() if no_hdr else [
+			('title', '', 'h1'), ('byline', 'Author', ''), ('url', 'URL', ''), ('ts', 'Date/time', '') ]:
+		if not (val := html.escape(meta.get(k, ''))): continue
+		hdr += (f'<{tag}>{val}</{tag}>' if tag else f'<b>{pre}:</b> {val}<br/>') + '\n'
+	if hdr: hdr = f'\n{hdr}<hr/>\n\n'
 	doc = dd(f'''
 		<?xml version="1.0" encoding="utf-8"?>
 		<!DOCTYPE html>
 		<html xmlns="http://www.w3.org/1999/xhtml"
 			xmlns:epub="http://www.idpf.org/2007/ops" xml:lang="en" lang="en">
-		<head><meta charset="utf-8"/><title>{html.escape(title)}</title></head>
-		<body>''') + f'\n{body}\n</body>\n</html>'
+		<head><meta charset="utf-8"/><title>{html.escape(meta.title)}</title></head>
+		<body>''') + hdr + f'{body}\n</body>\n</html>'
 	# lx.fromstring(doc, lxhtml.HTMLParser(recover=False))
 	return doc, list(img_map.values())
 
@@ -246,6 +251,36 @@ def html_to_epub(title, doc, img_list, pp=None):
 	return epub.getvalue()
 
 
+def html_proc_raw_meta(p, meta):
+	'Parse any interesting metadata straight from html file via regexps and lxml'
+	src = p.read_text()
+	if ( (lines := src.splitlines())[0].strip().endswith('<!--') # SingleFile metadata header
+			and lines[1].strip() == 'Page saved with SingleFile' ):
+		for line in lines[1:10]:
+			if meta.get('url') and meta.get('ts'): break
+			if not (m := re.fullmatch(
+				r'(?i)\s*(url|saved date):\s+(.*?)\s*', line )): continue
+			k = m[1]; k = {'saved date': 'ts'}.get(k, k)
+			if not meta.get(k): meta[k] = m[2]
+	# meta/link tags from html head
+	try: doc = lxhtml.document_fromstring(src, lxhtml.HTMLParser())
+	except lx.ParserError: return
+	head = (doc.xpath('./head') or [doc])[0]
+	if not meta.get('title') and (title := head.xpath('./title')):
+		meta.title = ' '.join(title[0].text_content().split())
+	for tag in head.xpath('./meta'):
+		if not (
+			(key := ( tag.attrib.get('name', '') or tag.attrib.get('property', '') ).strip().lower())
+			and (val := tag.attrib.get('content').strip()) ): continue
+		if ( not (key := { 'author': 'byline',
+				'og:url': 'url', 'og:title': 'title', 'build-timestamp': 'ts' }.get(key))
+			or meta.get(key) ): continue
+		meta[key] = val
+	for tag in head.xpath('./link'):
+		if not (key := tag.attrib.get('rel', '').strip().lower()): continue
+		if key == 'canonical': meta.url = meta.get('url') or tag.attrib.get('href')
+	if m := re.fullmatch(r'https?://(.*)', meta.get('url', '')): meta.url = m[1]
+
 def html_proc_rdrview(p, rdrview, pandoc, pr_out, pr_err):
 	proc = sp.run([*rdrview.meta, '--', p], stdout=sp.PIPE, check=True)
 	meta, key = adict(), None
@@ -267,14 +302,16 @@ def html_proc_rdrview(p, rdrview, pandoc, pr_out, pr_err):
 			if diff := list(difflib.unified_diff(txt_relax, txt_base, n=2)):
 				pr_out(f'SANITY-CHECK: rdrview diffs for base/relaxed run-modes in [ {p.name} ]')
 				for line in diff[3:]: pr_out(f'  {line.rstrip()}')
+	html_proc_raw_meta(p, meta)
 	return body, meta
 
 def html_proc_pandoc(p, pandoc):
 	proc = sp.run([ *pandoc.bin, '--wrap=preserve',
 		'--from=html', '--to=gfm-raw_html', '--', p ], stdout=sp.PIPE, check=True)
 	proc = sp.run([ *pandoc.bin, '--embed-resources=true',
-		'--from=gfm', '--to=html' ], input=proc.stdout, stdout=sp.PIPE, check=True)
-	return proc.stdout.decode(), adict()
+		'--from=gfm', '--to=html' ], input=proc.stdout.read(), stdout=sp.PIPE, check=True)
+	html_proc_raw_meta(p, meta := adict())
+	return proc.stdout.decode(), meta
 
 
 def main(args=None):
@@ -313,6 +350,7 @@ def main(args=None):
 			 - Other media tags like <audio>/<video>/<source ...> are removed.
 			 - Reader-problematic <pre>/<code> tags replaced by <p> with <br/>-separated lines.
 			 - Single-item <ol>/<ul> lists are converted to <div> - reader-bug with stuck indents.
+			 - Header block with page title/URL and other discernable metadata is prepended into HTML.
 
 			libxml2 tools and -p/--print option can be used to inspect resulting xhtml:
 				./xteink-html2epub bad.html -qp xhtml | xmllint --pretty 2 - | less''') + ' ')
@@ -344,6 +382,8 @@ def main(args=None):
 		Disable optional/opportunistic sanity-checks on resulting HTML.
 		These are currently only performed if rdrview supports --disable-heuristic
 			option and "pandoc" tool/binary available via PATH, auto-disabled otherwise.'''))
+	group.add_argument('-H', '--no-header', action='store_true', help=dd('''
+		Do not add title/URL/other-metadata header block to resulting HTML body.'''))
 
 	group = parser.add_argument_group('Image processing')
 	group.add_argument('--img-strip', action='store_true',
@@ -367,9 +407,12 @@ def main(args=None):
 	opts = parser.parse_args(sys.argv[1:] if args is None else args)
 
 	class pr_null_cls: __bool__ = lambda s: False; __call__ = lambda s,*a,**kw: None
-	pr_null = pr_null_cls()
-	pr_out = pr_out_nq = lambda *a,**kw: print(*a, **kw, flush=True)
-	pr_err = lambda *a,**kw: print(*a, **kw, file=sys.stderr, flush=True)
+	def pr_out(*a,**kw):
+		try: print(*a, **kw, flush=True)
+		except BrokenPipeError: # stdout pipe closed
+			os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
+	pr_null, pr_out_nq = pr_null_cls(), pr_out
+	pr_err = lambda *a,**kw: pr_out(*a, **kw, file=sys.stderr)
 	if opts.quiet: pr_out = pr_null
 	if not opts.print: pt = pn = None
 	pp = adict((pt.replace(*'-_'), dict.fromkeys(range(1, 999), pr_null)) for pt in print_types)
@@ -400,7 +443,7 @@ def main(args=None):
 		rdrview.check = ( not (opts.relaxed or opts.no_checks) and
 			'[proc-flags]' in sp.run([*rdrview.bin, '-h'], stderr=sp.PIPE).stderr.decode() )
 		if rdrview.check:
-			try: sp.run(['pandoc', '--version'], stdout=sp.DEVNULL)
+			try: sp.run([*pandoc.bin, '--version'], stdout=sp.DEVNULL)
 			except FileNotFoundError: rdrview_check = pr_out(
 				'WARN: Disabling rdrview-html sanity-checks due to missing pandoc tool' )
 			else:
@@ -430,11 +473,11 @@ def main(args=None):
 	if not p_epub_conflicts: return 1
 
 	for fx in files:
-		fx.title = fx.meta.get('title') or fx.meta.get('excerpt') or fx.p.stem
-		html, img_list = epub_html_wrap( fx.title, fx.body,
+		if not fx.meta.get('title'): fx.meta.title = fx.meta.get('excerpt') or fx.p.stem
+		html, img_list = epub_html_wrap( fx.body, fx.meta, no_hdr=opts.no_header,
 			img_proc=not opts.img_strip and adict( p=fx.p.resolve().parent, opts=img_proc,
 				pr_err=lambda msg: pr_err(msg + f' -- in [ {fx.p.name} ]'*(len(files) > 1)) ) )
-		fx.epub = html_to_epub( fx.title, html,
+		fx.epub = html_to_epub( fx.meta.title, html,
 			img_list, pp=adict((k, pp[k][fx.n]) for k in pp) )
 
 	with cl.ExitStack() as ctx:

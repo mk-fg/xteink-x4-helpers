@@ -123,14 +123,14 @@ Uses a bunch of tools, some are optional:
 - [rdrview] to find/extract and simplify text contents from HTML.\
   Can be optional if `--ph/--pandoc-html` option is used instead.
 
-- [python lxml module] to further process resulting HTML text-body to fix various
-  issues with HtmlSlimParser used by CrossPoint firmware forks on Xteink devices
-  (listed at the end of `-h/--help` output).
+- [python lxml module] to parse source HTML for metadata and tweak resulting
+  epub-html-body to fix various issues with HtmlSlimParser used by CrossPoint
+  firmware forks on Xteink devices (listed at the end of `-h/--help` output).
 
 - (optional) [ImageMagick] "magick" cli tool to process images for `<img ...>` tags
   (convert/downscale/grayscale), if there are any, and without `--img-strip` option.
 
-- (optional) [pandoc] tool if `--ph/--pandoc-html` option is used, or opportunistically
+- (optional) [pandoc] tool if `--ph/--pandoc-html` option is used, or also opportunistically
   (if available) when rdrview has `--disable-heuristic` option (see [rdrview PR#49] for that)
   and without `-C/--no-checks` script flag.
 
