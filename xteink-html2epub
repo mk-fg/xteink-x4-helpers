@@ -91,6 +91,8 @@ def epub_html_img(ctx, src, srcset, img_proc):
 		tmp.write(dec(data)); tmp.flush(); del m, data, url, src, srcset # large mem chunks
 		p, name = pl.Path(tmp.name), 'img'
 
+	elif re.match(r'(?i)data:image/svg\+xml,<svg[ >]', url): return # small-ish embedded svg icons
+
 	else: # check file and format via imagemagick
 		if url.startswith(src_pre):
 			url = url[len(src_pre):].removeprefix(f'{href_base.path}/')
@@ -229,7 +231,7 @@ def html_to_epub(title, doc, img_list, pp=None):
 			</navMap>
 			</ncx>'''))
 		pp.ncx(s)
-		body.writestr('OEBPS/nav.xhtml', s := dd('''
+		body.writestr('OEBPS/nav.xhtml', s := dd(f'''
 			<?xml version="1.0" encoding="utf-8"?>
 			<!DOCTYPE html>
 			<html xmlns="http://www.w3.org/1999/xhtml"
@@ -271,7 +273,7 @@ def html_proc_raw_meta(p, meta):
 	for tag in head.xpath('./meta'):
 		if not (
 			(key := ( tag.attrib.get('name', '') or tag.attrib.get('property', '') ).strip().lower())
-			and (val := tag.attrib.get('content').strip()) ): continue
+			and (val := tag.attrib.get('content', '').strip()) ): continue
 		if ( not (key := { 'author': 'byline',
 				'og:url': 'url', 'og:title': 'title', 'build-timestamp': 'ts' }.get(key))
 			or meta.get(key) ): continue
@@ -309,7 +311,7 @@ def html_proc_pandoc(p, pandoc):
 	proc = sp.run([ *pandoc.bin, '--wrap=preserve',
 		'--from=html', '--to=gfm-raw_html', '--', p ], stdout=sp.PIPE, check=True)
 	proc = sp.run([ *pandoc.bin, '--embed-resources=true',
-		'--from=gfm', '--to=html' ], input=proc.stdout.read(), stdout=sp.PIPE, check=True)
+		'--from=gfm', '--to=html' ], input=proc.stdout, stdout=sp.PIPE, check=True)
 	html_proc_raw_meta(p, meta := adict())
 	return proc.stdout.decode(), meta
 
