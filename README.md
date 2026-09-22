@@ -130,9 +130,8 @@ Uses a bunch of tools, some are optional:
 - (optional) [ImageMagick] "magick" cli tool to process images for `<img ...>` tags
   (convert/downscale/grayscale), if there are any, and without `--img-strip` option.
 
-- (optional) [pandoc] tool if `--ph/--pandoc-html` option is used, or also opportunistically
-  (if available) when rdrview has `--disable-heuristic` option (see [rdrview PR#49] for that)
-  and without `-C/--no-checks` script flag.
+- (optional) [pandoc] tool if `--ph/--pandoc-html` option is used,
+  or also for couple sanity-checks, if available and without `-C/--no-checks`.
 
 Intended to be used with [SingleFile]-saved pages, to make those readable as
 epub files, without cover images, splitting them into useless chapters (that tend
@@ -157,7 +156,6 @@ which tends to be more forgiving, but produces more noise in resulting EPUB
 [rdrview]: https://github.com/eafer/rdrview
 [python lxml module]: https://lxml.de
 [ImageMagick]: https://imagemagick.org/
-[rdrview PR#49]: https://github.com/eafer/rdrview/pull/49
 [Calibre]: https://calibre-ebook.com/
 [pandoc]: https://pandoc.org/
 

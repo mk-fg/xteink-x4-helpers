@@ -283,6 +283,23 @@ def html_proc_raw_meta(p, meta):
 		if key == 'canonical': meta.url = meta.get('url') or tag.attrib.get('href')
 	if m := re.fullmatch(r'https?://(.*)', meta.get('url', '')): meta.url = m[1]
 
+def html_proc_rdrview_sanity_checks(body, p, rdrview, pandoc):
+	txt_base, html2txt = None, lambda html: sp.run( pandoc.plain,
+		input=html.encode(), stdout=sp.PIPE, check=True ).stdout.decode().strip()
+	if rdrview.check.relaxed:
+		proc = sp.run([*rdrview.check.relaxed, '--', p], stdout=sp.PIPE, check=True)
+		if (body_chk := proc.stdout.decode()) != body:
+			import difflib
+			txt_base, txt_relax = txt_base or html2txt(body), html2txt(body_chk)
+			if diff := list(difflib.unified_diff(txt_relax.split('\n'), txt_base.split('\n'), n=2)):
+				pr_out(f'SANITY-CHECK: rdrview diffs for base/relaxed run-modes in [ {p.name} ]')
+				for line in diff[3:]: pr_out(f'  {line.rstrip()}')
+	if rdrview.check.plain:
+		txt_base, txt_src = txt_base or html2txt(body), html2txt(p.read_text(errors='replace'))
+		len_base, len_src = (len(''.join(txt.split())) for txt in [txt_base, txt_src])
+		if len_src - len_base > len_base * 0.2:
+			pr_out(f'SANITY-CHECK: rdrview doc is >20% shorter than original for [ {p.name} ]')
+
 def html_proc_rdrview(p, rdrview, pandoc, pr_out, pr_err):
 	proc = sp.run([*rdrview.meta, '--', p], stdout=sp.PIPE, check=True)
 	meta, key = adict(), None
@@ -295,15 +312,7 @@ def html_proc_rdrview(p, rdrview, pandoc, pr_out, pr_err):
 		f'ERROR: rdrview failed to process file (try --ph/--pandoc-html) [ {p} ]' )
 	proc = sp.run([*rdrview.conv, '--', p], stdout=sp.PIPE, check=True)
 	body = proc.stdout.decode()
-	if rdrview.check:
-		proc = sp.run([*rdrview.check, '--', p], stdout=sp.PIPE, check=True)
-		if (body_chk := proc.stdout.decode()) != body:
-			import difflib; txt_base, txt_relax = (
-				sp.run(pandoc.plain, input=html.encode(), stdout=sp.PIPE, check=True)
-				.stdout.decode().strip().split('\n') for html in (body, body_chk) )
-			if diff := list(difflib.unified_diff(txt_relax, txt_base, n=2)):
-				pr_out(f'SANITY-CHECK: rdrview diffs for base/relaxed run-modes in [ {p.name} ]')
-				for line in diff[3:]: pr_out(f'  {line.rstrip()}')
+	if rdrview.check: html_proc_rdrview_sanity_checks(body, p, rdrview, pandoc)
 	html_proc_raw_meta(p, meta)
 	return body, meta
 
@@ -377,8 +386,7 @@ def main(args=None):
 		Disable some rdrview tool content-processing heuristics, leaving more elements
 			in resulting main HTML document body, which can be useful if it removes too much.
 		Requires rdrview supporting --disable-heuristic option,
-			see https://github.com/eafer/rdrview/pull/49 for status on that.
-		It's same diff as sanity-checks default-detect when pandoc is available.'''))
+			see https://github.com/eafer/rdrview/pull/49 for status on that.'''))
 	group.add_argument('--ph', '--pandoc-html', action='store_true', help=dd('''
 		Use alternative source HTML processing with pandoc instead of rdrview tool.
 		Converts HTML to markdown and back, leaving only structure, text and images.'''))
@@ -444,15 +452,15 @@ def main(args=None):
 			f'{href_base.schema}{href_base.host}/{href_base.path}/' )
 		rdrview_opts_relaxed = '--disable-heuristic', 'unlikely'
 		if opts.relaxed: rdrview.conv += rdrview_opts_relaxed
-		rdrview.check = ( not (opts.relaxed or opts.no_checks) and
-			'[proc-flags]' in sp.run([*rdrview.bin, '-h'], stderr=sp.PIPE).stderr.decode() )
-		if rdrview.check:
+		if rdrview.setdefault('check', not opts.no_checks):
 			try: sp.run([*pandoc.bin, '--version'], stdout=sp.DEVNULL)
-			except FileNotFoundError: rdrview_check = pr_out(
+			except FileNotFoundError: rdrview.check = pr_out(
 				'WARN: Disabling rdrview-html sanity-checks due to missing pandoc tool' )
 			else:
-				rdrview.check = rdrview.conv + rdrview_opts_relaxed
 				pandoc.plain = *pandoc.bin, '--quiet', '--from=html', '--to=plain'
+				rdrview.check = adict( plain=True, relaxed=not opts.relaxed
+					and '[proc-flags]' in sp.run([*rdrview.bin, '-h'], stderr=sp.PIPE).stderr.decode()
+					and rdrview.conv + rdrview_opts_relaxed )
 
 	files, p_epub_conflicts = list(), cs.defaultdict(list)
 	for n, p in enumerate(map(pl.Path, opts.html_files), 1):
