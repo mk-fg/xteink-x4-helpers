@@ -369,6 +369,8 @@ def main(args=None):
 		Must be an existing dir, won't be created automatically. Default: current dir.
 		Any conflicting output paths between inputs will print error and cancel the process.
 		Empty value or "-" (hyphen) will put .epub files next to specified source htmls.'''))
+	group.add_argument('-S', '--skip-existing', action='store_true', help=dd('''
+		Skip any pre-existing .epub files on output name match. Default is to overwrite those.'''))
 
 	group = parser.add_argument_group('Text processing options')
 	group.add_argument('-r', '--relaxed', action='store_true', help=dd('''
@@ -475,12 +477,15 @@ def main(args=None):
 	if not p_epub_conflicts: return 1
 
 	for fx in files:
+		if opts.skip_existing and (p := fx.p_epub).exists():
+			fx.skip = pr_out(f'SKIP: Output file exists [ {p.name} ] for [ {fx.p.name} ]') or 1
 		if not fx.meta.get('title'): fx.meta.title = fx.meta.get('excerpt') or fx.p.stem
 		html, img_list = epub_html_wrap( fx.body, fx.meta, no_hdr=opts.no_header,
 			img_proc=not opts.img_strip and adict( p=fx.p.resolve().parent, opts=img_proc,
 				pr_err=lambda msg: pr_err(msg + f' -- in [ {fx.p.name} ]'*(len(files) > 1)) ) )
 		fx.epub = html_to_epub( fx.meta.title, html,
 			img_list, pp=adict((k, pp[k][fx.n]) for k in pp) )
+	files = list(fx for fx in files if not fx.get('skip'))
 
 	with cl.ExitStack() as ctx:
 		for fx in files:
