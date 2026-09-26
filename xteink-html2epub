@@ -255,32 +255,32 @@ def html_to_epub(title, doc, img_list, pp=None):
 
 def html_proc_raw_meta(p, meta):
 	'Parse any interesting metadata straight from html file via regexps and lxml'
-	src = p.read_text()
+	src, fallbacks = p.read_text(), list()
 	if ( (lines := src.splitlines())[0].strip().endswith('<!--') # SingleFile metadata header
 			and lines[1].strip() == 'Page saved with SingleFile' ):
 		for line in lines[1:10]:
 			if meta.get('url') and meta.get('ts'): break
 			if not (m := re.fullmatch(
 				r'(?i)\s*(url|saved date):\s+(.*?)\s*', line )): continue
-			k = m[1]; k = {'saved date': 'ts'}.get(k, k)
-			if not meta.get(k): meta[k] = m[2]
-	# meta/link tags from html head
-	try: doc = lxhtml.document_fromstring(src, lxhtml.HTMLParser())
-	except lx.ParserError: return
-	head = (doc.xpath('./head') or [doc])[0]
-	if not meta.get('title') and (title := head.xpath('./title')):
-		meta.title = ' '.join(title[0].text_content().split())
-	for tag in head.xpath('./meta'):
-		if not (
-			(key := ( tag.attrib.get('name', '') or tag.attrib.get('property', '') ).strip().lower())
-			and (val := tag.attrib.get('content', '').strip()) ): continue
-		if ( not (key := { 'author': 'byline',
-				'og:url': 'url', 'og:title': 'title', 'build-timestamp': 'ts' }.get(key))
-			or meta.get(key) ): continue
-		meta[key] = val
-	for tag in head.xpath('./link'):
-		if not (key := tag.attrib.get('rel', '').strip().lower()): continue
-		if key == 'canonical': meta.url = meta.get('url') or tag.attrib.get('href')
+			if (k := m[1].lower()) == 'url' and not meta.get(k): meta[k] = m[2]
+			elif k == 'saved date': fallbacks.append(('ts', m[2])) # prefer published-ts over saved
+	with cl.suppress(lx.ParserError): # meta/link tags from html head
+		doc = lxhtml.document_fromstring(src, lxhtml.HTMLParser())
+		head = (doc.xpath('./head') or doc.xpath('.//head') or [doc])[0]
+		if not meta.get('title') and (title := head.xpath('./title')):
+			meta.title = ' '.join(title[0].text_content().split())
+		for tag in head.xpath('./meta'):
+			if not (
+				(key := ( tag.attrib.get('name', '') or tag.attrib.get('property', '') ).strip().lower())
+				and (val := tag.attrib.get('content', '').strip()) ): continue
+			if ( not (key := { 'author': 'byline',
+					'og:url': 'url', 'og:title': 'title', 'build-timestamp': 'ts' }.get(key))
+				or meta.get(key) ): continue
+			meta[key] = val
+		for tag in head.xpath('./link'):
+			if not (key := tag.attrib.get('rel', '').strip().lower()): continue
+			if key == 'canonical': meta.url = meta.get('url') or tag.attrib.get('href')
+	meta.update((k, v) for k, v in dict(reversed(fallbacks)).items() if not meta.get(k))
 	if m := re.fullmatch(r'https?://(.*)', meta.get('url', '')): meta.url = m[1]
 
 def html_proc_rdrview_sanity_checks(body, p, rdrview, pandoc, pr_warn):
