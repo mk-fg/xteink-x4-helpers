@@ -13,6 +13,7 @@ usage() {
 	echo "Usage: $bin <note>.<html/xtc/xtch> ..."
 	echo "Usage: $bin <image>.<jpg/png/bmp> ..."
 	echo "Usage: $bin b[ook] <book>.<fb2/epub> ..."
+	echo "Usage: $bin u[pload] <dir> <book>.<fb2/epub> ..."
 	echo "Usage: $bin <firmware>.bin"
 	echo "Usage: $bin p[ing]  # to keep wifi running for longer"
 	[[ $1 -ne 0 ]] || { echo
@@ -25,7 +26,7 @@ usage() {
 		echo "- *.bmp file gets uploaded to ${dir[sleep]}/sleep.bmp as a sleep/power-off image"
 		echo "- by default .fb2/.epub treated as \"web longreads\" to put into ${dir[web]}/<today-date> dirs"
 		echo "- .html/.xtc/.xtch files are stored as notes to ${dir[note]}, other images go to ${dir[image]}"
-		echo "- explicitly-specified book uploads go to ${dir[book]}"
+		echo "- uploads specified with b/book option go to ${dir[book]}, or any dir with u/upload option"
 		echo
 		echo "Uses fping/curl and python \"unidecode\" module (for filename sanitization), and runs"
 		echo " \"sudo wifi-tmp $wifi_instance $wifi_profile\" from the same repo to init/keep wifi open (for like 20m)."; }
@@ -34,7 +35,7 @@ usage() {
 	&& "${@: -1}" != -h && "${@: -1}" != --help ]] || usage 0
 
 set -eo pipefail
-declare -A ext_mts=(
+dst_dir=; declare -A ext_mts=(
 	[fb2]=application/x-fictionbook+xml [epub]=application/epub+zip
 	[jpg]=image/jpeg [png]=image/png [bmp]=image/bmp
 	[xtc]=application/octet-stream [xtch]=application/octet-stream
@@ -43,6 +44,10 @@ mt_err='must be .fb2/epub (book/web), .jpg/png/bmp (image/sleep) or .bin (firmwa
 if [[ "$1" = p || "$1" = ping ]]; then m=ping
 elif [[ "$1" = b || "$1" = book ]]; then m=book; shift
 elif [[ "${1##*/}" = sleep.bmp || "${1##*/}" = cover.bmp ]]; then m=sleep
+elif [[ "$1" = u || "$1" = upload ]]; then
+	m=file; shift; dst_dir=$1; shift
+	[[ -n "$dst_dir" && -n "$1" ]] || usage 1
+	dst_dir=${dst_dir#/}; dst_dir=${dst_dir%/}
 else
 	m="${1##*.}"; m=${m,,}
 	[[ -n "${ext_mts[$m]}" ]] || { echo >&2 "ERROR: File [ $1 ] $mt_err"; exit 1; }
@@ -51,6 +56,9 @@ else
 		elif [[ "$m" = jpg || "$m" = png || "$m" = bmp ]]; then m=image
 		else m=web; fi
 fi
+[[ -n "$dst_dir" ]] || {
+	dst_dir=${dir[$m]}
+	[[ $m != web ]] || dst_dir+=/$(printf '%(%Y-%m-%d)T' -1); }
 [[ -n "$1" ]] || usage 1
 
 
@@ -72,11 +80,12 @@ elif [[ $m = sleep ]]; then
 			$'\n'"  ( set XT_RESIZE env-var to bypass this error and allow resized images )"; exit 1; fi
 
 else # Filenames are limited to ascii subset on xteink - fix with py script
-	declare -A src; echo "Upload(s) [ $m ] ::"
+	declare -A src; echo "Upload(s) [ $m ] -> $dst_dir"
 	p=; while read name; do
 		[[ -n "$p" ]] || { p=$name; continue; }
 		echo "  $p"; ext=${name##*.}; ext=${ext,,}
-		if [[ $m = note ]]; then [[ "$ext" = xtc || "$ext" = xtch ]]
+		if [[ $m = file ]]; then : # any arbitrary file type(s)
+				elif [[ $m = note ]]; then [[ "$ext" = xtc || "$ext" = xtch ]]
 				elif [[ $m = image ]]; then [[ "$ext" = jpg || "$ext" = png || "$ext" = bmp ]]
 				else [[ "$ext" = fb2 || "$ext" = epub ]]; fi \
 			|| { echo >&2 "ERROR: File ($m) $mt_err"; exit 1; } # name already printed above
@@ -129,15 +138,20 @@ echo --------------------
 
 ### Upload file(s)
 
-err_exit=0 name_fixed= c0='\033[0m' c_err='\033[1;31m'
+c0='\033[0m' c_err='\033[1;31m'
+err_exit=0 name_fixed= mt_fallback=application/octet-stream
 tmp_link=/tmp/.xteink.file # curl has issues with complicated src paths
 
 if [[ $m = web ]]; then
-	dt=$(printf '%(%Y-%m-%d)T' -1)
-	curl -s -F name=$dt -F path="${dir[web]}" http://$addr/mkdir &>/dev/null
-	dst="${dir[web]}"/$dt
+	dst=${dst_dir%/*} p=${dst_dir##*/}
+	curl -s -F name="$p" -F path="$dst" http://$addr/mkdir &>/dev/null
+elif [[ $m = file ]]; then
+	IFS=$'\n' read -d '' -ra dst_dir_arr <<< "${dst_dir//\//$'\n'}" ||:
+	dst=/; for p in "${dst_dir_arr[@]}"; do
+		curl -s -F name="$p" -F path="$dst" http://$addr/mkdir &>/dev/null
+		dst="${dst%/}/$p"
+	done
 else
-	dst=${dir[$m]}
 	if [[ $m = fw ]]; then name_fixed=firmware.bin
 	elif [[ $m = sleep ]]; then name_fixed=sleep.bmp; fi
 	[[ -z "$name_fixed" || "${#src[@]}" -eq 1 ]] || {
@@ -147,10 +161,11 @@ fi
 for name in "${!src[@]}"; do
 	mt=${name##*.}; mt=${mt,,}; mt=${ext_mts[$mt]}
 	p="${src[$name]}"; ln -sf "$(realpath "$p")" "$tmp_link"
+	[[ -z "$mt" ]] || mt=$mt_fallback
 	[[ -z "$name_fixed" ]] || name=$name_fixed
 	msg=$( curl -s --fail \
 		-F "file=@$tmp_link;filename=$name;type=$mt" \
-		http://$addr/upload?path=$dst 2>&1 ) && err= || err=$?
+		http://$addr/upload?path=$dst_dir 2>&1 ) && err= || err=$?
 	[[ -z "$err" ]] && echo "-- DONE :: $msg" || {
 		echo >&2; [[ -z "$msg" ]] || msg=": $msg $c_err!!$c0"
 		echo >&2 -e "$c_err !! ERROR$c0 :: Failed to upload file [ $p ]$msg"; err_exit=$err; }

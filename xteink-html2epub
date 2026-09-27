@@ -280,7 +280,7 @@ def html_proc_raw_meta(p, meta):
 		for tag in head.xpath('./link'):
 			if not (key := tag.attrib.get('rel', '').strip().lower()): continue
 			if key == 'canonical': meta.url = meta.get('url') or tag.attrib.get('href')
-	meta.update((k, v) for k, v in dict(reversed(fallbacks)).items() if not meta.get(k))
+	meta.update((k, v) for k, v in dict(fallbacks).items() if not meta.get(k))
 	if m := re.fullmatch(r'https?://(.*)', meta.get('url', '')): meta.url = m[1]
 
 def html_proc_rdrview_sanity_checks(body, p, rdrview, pandoc, pr_warn):
