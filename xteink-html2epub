@@ -297,8 +297,9 @@ def html_proc_rdrview_sanity_checks(body, p, rdrview, pandoc, pr_warn):
 	if rdrview.check.plain:
 		txt_base, txt_src = txt_base or html2txt(body), html2txt(p.read_text(errors='replace'))
 		len_base, len_src = (len(''.join(txt.split())) for txt in [txt_base, txt_src])
-		if len_src - len_base > len_base * 0.2:
-			pr_warn(f'SANITY-CHECK: rdrview doc is >20% shorter than original for [ {p.name} ]')
+		if len_src - len_base > len_base * 0.2: pr_warn(
+			'SANITY-CHECK: rdrview doc is >20% shorter than the original'
+			f' (~{round(100 * len_base / len_src)}% of it) for [ {p.name} ]' )
 
 def html_proc_rdrview(p, rdrview, pandoc, pr_out, pr_err):
 	info = sp.run([*rdrview.meta, '--', p], stdout=sp.PIPE, check=True)
