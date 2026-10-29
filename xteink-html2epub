@@ -146,6 +146,7 @@ def epub_html_wrap(body, meta, no_hdr=False, img_proc=None):
 			img2.fn = f'{fn}.{img.tag}.png'
 		e.attrib.clear(); e.attrib['src'] = img2.fn
 
+	## Add header block and html wrapper
 	# Despite method=xml here, lxml will easily output broken XML it itself won't validate
 	hdr, body = '', lx.tostring(doc, method='xml', encoding='unicode', pretty_print=True)
 	for k, pre, tag in list() if no_hdr else [
@@ -446,10 +447,10 @@ def main(args=None):
 
 	pandoc = adict(bin=['pandoc', '--sandbox=true'])
 	if rdrview := not opts.ph:
-		rdrview = adict(bin=['rdrview'])
+		rdrview = adict(bin=['rdrview', '-E', 'utf-8']) # not always picked up from meta tags
 		rdrview.meta = *rdrview.bin, '--meta'
-		rdrview.conv = ( *rdrview.bin, '--html', '--base',
-			f'{href_base.schema}{href_base.host}/{href_base.path}/' )
+		rdrview.conv = ( *rdrview.bin, '--html',
+			'--base', f'{href_base.schema}{href_base.host}/{href_base.path}/' )
 		rdrview_opts_relaxed = '--disable-heuristic', 'unlikely'
 		if opts.relaxed: rdrview.conv += rdrview_opts_relaxed
 		if rdrview.setdefault('check', not opts.no_checks):
