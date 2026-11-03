@@ -254,6 +254,11 @@ def html_to_epub(title, doc, img_list, pp=None):
 	return epub.getvalue()
 
 
+html_proc_raw_meta_tags = dict( # first match sets the value
+	(tag, k) for k, v in dict( byline='author', title='og:title twitter:title',
+		ts='article:published_time article:modified_time build-timestamp' ).items()
+	for tag in v.split() )
+
 def html_proc_raw_meta(p, meta):
 	'Parse any interesting metadata straight from html file via regexps and lxml'
 	src, fallbacks = p.read_text(), list()
@@ -274,9 +279,7 @@ def html_proc_raw_meta(p, meta):
 			if not (
 				(key := ( tag.attrib.get('name', '') or tag.attrib.get('property', '') ).strip().lower())
 				and (val := tag.attrib.get('content', '').strip()) ): continue
-			if ( not (key := { 'author': 'byline',
-					'og:url': 'url', 'og:title': 'title', 'build-timestamp': 'ts' }.get(key))
-				or meta.get(key) ): continue
+			if not (key := html_proc_raw_meta_tags.get(key)) or meta.get(key): continue
 			meta[key] = val
 		for tag in head.xpath('./link'):
 			if not (key := tag.attrib.get('rel', '').strip().lower()): continue
