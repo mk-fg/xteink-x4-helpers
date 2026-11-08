@@ -142,6 +142,12 @@ for roughly half of "properly" converted HTMLs (using e.g. [Calibre]).\
 Single web page isn't a book, and Xteink devices don't parse HTML correctly,
 so more faithful conversion process is, the worse result tends to get for these.
 
+Adds title, URL and date/time metadata from source HTML (if found there) at the
+start of the text, to easily recognize where/when this was saved from,
+with `-t/--tag-name-prefix` option to use those to make a short filename-prefix
+(~5 chars) so that resulting files sort by URL and date/time, regardless of
+arbitrary filenames after that prefix.
+
 Has alternative pandoc round-trip-processing mode (`--ph/--pandoc-html` option)
 for when rdrview can't detect text body (reported as fatal error by script),
 which tends to be more forgiving, but produces more noise in resulting EPUB

@@ -2,7 +2,7 @@
 
 import pathlib as pl, subprocess as sp, contextlib as cl, hashlib as hl
 import datetime as dt, collections as cs, textwrap as tw, zipfile as z
-import os, sys, re, io, html, tempfile, uuid, base64, math, urllib.parse as up
+import os, sys, re, io, html, tempfile, uuid, base64, urllib.parse as up
 
 import lxml.html as lxhtml, lxml.etree as lx # https://lxml.de/
 
@@ -329,11 +329,11 @@ def html_proc_pandoc(p, pandoc):
 	return proc.stdout.decode(), meta
 
 
-def file_names_unprefix(names):
+def file_prefix_strip(names):
 	if not names or len(names := list(names)) < 2: return list()
 	names_changed = list()
-	while m := re.match(r'(?i)[^a-z0-9]*[a-z0-9]+\b', names[0]):
-		if not ((nn := len(m[0])) and all(fn.startswith(m[0]) for fn in names)): break
+	while m := re.match(r'(?i)([\W_]*[^\W_]+)[\W_]', names[0]): # [^\W_] = \w without _
+		if not ((nn := len(m[1])) and all(fn.startswith(m[1]) for fn in names)): break
 		for n, fn in enumerate(names): names[n] = fn[nn:]
 		names_changed = names
 	if names_changed:
@@ -341,7 +341,7 @@ def file_names_unprefix(names):
 			for n, fn in enumerate(names): names[n] = fn[1:]
 	return names_changed
 
-def file_ts_parse_int(ts):
+def file_prefix_ts_int(ts):
 	if not ts or isinstance(ts, (int, float)): return int(ts or 0)
 	if isinstance(ts, dt.datetime): return int(ts.timestamp())
 	try: return int(dt.datetime.fromisoformat(ts).timestamp())
@@ -349,28 +349,26 @@ def file_ts_parse_int(ts):
 		check=True, stdin=sp.DEVNULL, stdout=sp.PIPE ).stdout.decode().strip())
 
 def file_prefix_tag(metas: iter(adict({url: str, ts: int}))):
-	'''Returns list of short ascii prefixes for url/ts, to sort by: url-domain, url-path, ts.
-		Assumes that filename ordering is case-sensitive uppercase-first, same as ascii codes.'''
-	asc = '-+0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
+	'''Returns list of short ascii prefixes for url/ts metas, to sort by (site, path, ts).
+		Assumes that filename ordering might be case-insensitive, so only uses b32 chars.'''
+	asc = '123456789abcdefghjkmnpqrstuvwxyz'
 	for me in (metas := list(metas)):
 		if m := re.match(r'\w+:(.*)', u := me.url): u = m[1]
 		me.us, me.up = (u := u.lstrip('/').split('/', 1))[0], len(u) > 1 and u[1] or ''
 	for me in sorted(metas, key=lambda me: (me.us, me.ts, me.up)):
-		me.pre = me.us and str_hash(me.us, 2)
+		me.pre = me.us and str_hash(me.us, 2, strip='ABCDEFGHIJKLMNOPQRSTUVWXYZ0ilo')
 		if me.ts:
-			ts = (me.ts & (2**28-1)) >> 16 # 31b - top 3b/8.5y - last 16b/18h = 12b
+			ts = (me.ts & (2**27-1)) >> 17 # 31b - top 4b/4y - last 17b/36h = 10b
 			while True:
-				pre = me.pre + asc[ts >> 6] + asc[ts & 63]
+				pre = me.pre + asc[ts >> 5] + asc[ts & 31]
 				if not any(m2.get('pre') == pre for m2 in metas): me.pre = pre; break
 				ts = (ts + 1) & (2**12 - 1) # so that prefix remains ts-sorted on conflicts
 			continue
 		# Lacking timestamps, add index from path if there are multiple same-site urls
-		if me.us and (n := len(ups := sorted(m2.up for m2 in metas if me.us == m2.us))) > 1:
-			ups.sort(key=lambda me: (me.ts, me.up)); nn = min(len(asc)-1, ups.index(me.up))
-			if (n_bits := math.ceil(math.log2(n))) <= 4: # use last <=4b for <=16 indexes
-				c = asc.index(me.pre[-1]) # not actually same letter, but it doesn't matter
-				me.pre = me.pre[:-1] + asc[(c & ~((1<<n_bits)-1)) + nn]
-			else: me.pre += asc[nn]
+		if me.us and (n := len(ups := sorted( m2.up
+				for m2 in metas if me.us == m2.us and not m2.ts ))) > 1:
+			nn = ups.index(me.up)
+			me.pre += (asc[(nn >> 5) & 31] if n > 31 else 'Z') + asc[nn & 31]
 	return list(me.pre for me in metas)
 
 
@@ -531,12 +529,12 @@ def main(args=None):
 		files.append(adict(p=p, n=n, p_epub=p_epub, meta=meta, body=body))
 
 	if opts.tag_name_prefix:
-		names = file_names_unprefix(fx.p_epub.name for fx in files)
+		names = file_prefix_strip(fx.p_epub.name for fx in files)
 		for fn, fx in zip(names, files): fx.p_epub = fx.p_epub.with_name(fn)
 		prefixes = file_prefix_tag(adict( url=fx.meta.get('url') or '',
-			ts=file_ts_parse_int(fx.meta.get('ts')) ) for fx in files)
+			ts=file_prefix_ts_int(fx.meta.get('ts')) ) for fx in files)
 		for pre, fx in zip(prefixes, files):
-			if pre: fx.p_epub = fx.p_epub.with_name(f'{pre}_{fx.p_epub.name}')
+			if pre: fx.p_epub = fx.p_epub.with_name(f'T{pre}_{fx.p_epub.name}')
 
 	p_epub_conflicts = cs.defaultdict(list)
 	for fx in files: p_epub_conflicts[str(fx.p_epub).lower()].append(fx)
