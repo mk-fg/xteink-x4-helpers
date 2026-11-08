@@ -2,7 +2,7 @@
 
 import pathlib as pl, subprocess as sp, contextlib as cl, hashlib as hl
 import datetime as dt, collections as cs, textwrap as tw, zipfile as z
-import os, sys, re, io, html, tempfile, uuid, base64, urllib.parse as up
+import os, sys, re, io, html, tempfile, uuid, base64, math, urllib.parse as up
 
 import lxml.html as lxhtml, lxml.etree as lx # https://lxml.de/
 
@@ -329,6 +329,51 @@ def html_proc_pandoc(p, pandoc):
 	return proc.stdout.decode(), meta
 
 
+def file_names_unprefix(names):
+	if not names or len(names := list(names)) < 2: return list()
+	names_changed = list()
+	while m := re.match(r'(?i)[^a-z0-9]*[a-z0-9]+\b', names[0]):
+		if not ((nn := len(m[0])) and all(fn.startswith(m[0]) for fn in names)): break
+		for n, fn in enumerate(names): names[n] = fn[nn:]
+		names_changed = names
+	if names_changed:
+		while not (c := names[0][0]).isalnum() and all(fn[0] == c for fn in names):
+			for n, fn in enumerate(names): names[n] = fn[1:]
+	return names_changed
+
+def file_ts_parse_int(ts):
+	if not ts or isinstance(ts, (int, float)): return int(ts or 0)
+	if isinstance(ts, dt.datetime): return int(ts.timestamp())
+	try: return int(dt.datetime.fromisoformat(ts).timestamp())
+	except ValueError: return int(sp.run( ['date', '+%s', '-d', ts],
+		check=True, stdin=sp.DEVNULL, stdout=sp.PIPE ).stdout.decode().strip())
+
+def file_prefix_tag(metas: iter(adict({url: str, ts: int}))):
+	'''Returns list of short ascii prefixes for url/ts, to sort by: url-domain, url-path, ts.
+		Assumes that filename ordering is case-sensitive uppercase-first, same as ascii codes.'''
+	asc = '-+0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
+	for me in (metas := list(metas)):
+		if m := re.match(r'\w+:(.*)', u := me.url): u = m[1]
+		me.us, me.up = (u := u.lstrip('/').split('/', 1))[0], len(u) > 1 and u[1] or ''
+	for me in sorted(metas, key=lambda me: (me.us, me.ts, me.up)):
+		me.pre = me.us and str_hash(me.us, 2)
+		if me.ts:
+			ts = (me.ts & (2**28-1)) >> 16 # 31b - top 3b/8.5y - last 16b/18h = 12b
+			while True:
+				pre = me.pre + asc[ts >> 6] + asc[ts & 63]
+				if not any(m2.get('pre') == pre for m2 in metas): me.pre = pre; break
+				ts = (ts + 1) & (2**12 - 1) # so that prefix remains ts-sorted on conflicts
+			continue
+		# Lacking timestamps, add index from path if there are multiple same-site urls
+		if me.us and (n := len(ups := sorted(m2.up for m2 in metas if me.us == m2.us))) > 1:
+			ups.sort(key=lambda me: (me.ts, me.up)); nn = min(len(asc)-1, ups.index(me.up))
+			if (n_bits := math.ceil(math.log2(n))) <= 4: # use last <=4b for <=16 indexes
+				c = asc.index(me.pre[-1]) # not actually same letter, but it doesn't matter
+				me.pre = me.pre[:-1] + asc[(c & ~((1<<n_bits)-1)) + nn]
+			else: me.pre += asc[nn]
+	return list(me.pre for me in metas)
+
+
 def main(args=None):
 	print_types = 'input body xhtml xml opf ncx nav'.split()
 
@@ -384,6 +429,11 @@ def main(args=None):
 		Empty value or "-" (hyphen) will put .epub files next to specified source htmls.'''))
 	group.add_argument('-S', '--skip-existing', action='store_true', help=dd('''
 		Skip any pre-existing .epub files on output name match. Default is to overwrite those.'''))
+	group.add_argument('-t', '--tag-name-prefix', action='store_true', help=dd('''
+		Add alphanumeric sort-tag prefix, and remove any common
+			space/punctuation-separated prefix from filenames (if >1 files specified).
+		"sort-tag" is a short ascii tag consisting of: website domain/path hash, page date/time.
+		Makes files from same site filename-sorted together in chronological order.'''))
 
 	group = parser.add_argument_group('Text processing options')
 	group.add_argument('-r', '--relaxed', action='store_true', help=dd('''
@@ -466,7 +516,7 @@ def main(args=None):
 					and '[proc-flags]' in sp.run([*rdrview.bin, '-h'], stderr=sp.PIPE).stderr.decode()
 					and rdrview.conv + rdrview_opts_relaxed )
 
-	files, p_epub_conflicts = list(), cs.defaultdict(list)
+	files = list()
 	for n, p in enumerate(map(pl.Path, opts.html_files), 1):
 		if not p.is_file(): parser.error(f'Input file is missing/bogus/inaccessible: {p}')
 		if pr := pp.input[n]: pr(p.read_text().strip())
@@ -479,12 +529,22 @@ def main(args=None):
 			if str(p).lower() == str(p_epub).lower(): p_epub = p_epub.with_suffix('.proc.epub')
 			if p_dst_dir: p_epub = p_dst_dir / p_epub.name
 		files.append(adict(p=p, n=n, p_epub=p_epub, meta=meta, body=body))
-		p_epub_conflicts[p_epub].append(p)
 
-	for p_epub, ps in p_epub_conflicts.items():
-		if len(ps) == 1: continue
-		pr_err(f'ERROR: Output filename conflict [ {p_epub.name} ] for source files:')
-		for p in ps: pr_err(f'  {p}')
+	if opts.tag_name_prefix:
+		names = file_names_unprefix(fx.p_epub.name for fx in files)
+		for fn, fx in zip(names, files): fx.p_epub = fx.p_epub.with_name(fn)
+		prefixes = file_prefix_tag(adict( url=fx.meta.get('url') or '',
+			ts=file_ts_parse_int(fx.meta.get('ts')) ) for fx in files)
+		for pre, fx in zip(prefixes, files):
+			if pre: fx.p_epub = fx.p_epub.with_name(f'{pre}_{fx.p_epub.name}')
+
+	p_epub_conflicts = cs.defaultdict(list)
+	for fx in files: p_epub_conflicts[str(fx.p_epub).lower()].append(fx)
+	for p_epub, fx_list in p_epub_conflicts.items():
+		if len(fx_list) == 1: continue
+		fn = fx_list[0].p_epub.name # can vary in case, but any will do for error msg
+		pr_err(f'ERROR: Output filename conflict [ {fn} ] for source files:')
+		for fx in fx_list: pr_err(f'  {fx.p}')
 		p_epub_conflicts = None
 	if not p_epub_conflicts: return 1
 
